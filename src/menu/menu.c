@@ -1,5 +1,6 @@
 #include "../core/game.h"
 #include "../core/screens.h"
+#include "../core/theme.h"
 #include <stdlib.h>
 
 static Rectangle playButton = { SCREEN_WIDTH / 2.0f - 150, SCREEN_HEIGHT / 2.0f, 300, 60 };
@@ -43,80 +44,49 @@ void UpdateTitleScreen(void) {
 }
 
 void DrawTitleScreen(void) {
-    // Beautiful cadet background
-    ClearBackground((Color){ 10, 15, 26, 255 }); 
+    // 1. Draw standard background & grid
+    ClearBackground(COLOR_BG_DARK); 
+    DrawThemeGrid(SCREEN_WIDTH, SCREEN_HEIGHT, CELL_SIZE);
     
-    // Draw background grid lines (cyber style)
-    for (int x = 0; x < SCREEN_WIDTH; x += 40) {
-        Color col = (x % 160 == 0) ? ColorAlpha((Color){ 59, 130, 246, 255 }, 0.08f) : ColorAlpha((Color){ 59, 130, 246, 255 }, 0.03f);
-        DrawLine(x, 0, x, SCREEN_HEIGHT, col);
-    }
-    for (int y = 0; y < SCREEN_HEIGHT; y += 40) {
-        Color col = (y % 160 == 0) ? ColorAlpha((Color){ 59, 130, 246, 255 }, 0.08f) : ColorAlpha((Color){ 59, 130, 246, 255 }, 0.03f);
-        DrawLine(0, y, SCREEN_WIDTH, y, col);
-    }
-    
-    // Draw high-tech circuit layouts in corners
-    
+    // 2. Draw high-tech circuit layouts in corners
     // Top-Left Tech Corner
-    DrawLineEx((Vector2){20, 20}, (Vector2){120, 20}, 2.0f, ColorAlpha((Color){ 59, 130, 246, 255 }, 0.3f));
-    DrawLineEx((Vector2){120, 20}, (Vector2){150, 50}, 2.0f, ColorAlpha((Color){ 59, 130, 246, 255 }, 0.3f));
-    DrawCircle(20, 20, 4.0f, ColorAlpha((Color){ 59, 130, 246, 255 }, 0.5f));
-    DrawCircle(150, 50, 4.0f, ColorAlpha((Color){ 59, 130, 246, 255 }, 0.5f));
+    DrawLineEx((Vector2){20, 20}, (Vector2){120, 20}, 2.0f, ColorAlpha(COLOR_GRID_LINE, 0.3f));
+    DrawLineEx((Vector2){120, 20}, (Vector2){150, 50}, 2.0f, ColorAlpha(COLOR_GRID_LINE, 0.3f));
+    DrawCircle(20, 20, 4.0f, ColorAlpha(COLOR_GRID_LINE, 0.5f));
+    DrawCircle(150, 50, 4.0f, ColorAlpha(COLOR_GRID_LINE, 0.5f));
     
     // Bottom-Right Tech Corner
-    DrawLineEx((Vector2){SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20}, (Vector2){SCREEN_WIDTH - 120, SCREEN_HEIGHT - 20}, 2.0f, ColorAlpha((Color){ 168, 85, 247, 255 }, 0.3f));
-    DrawLineEx((Vector2){SCREEN_WIDTH - 120, SCREEN_HEIGHT - 20}, (Vector2){SCREEN_WIDTH - 150, SCREEN_HEIGHT - 50}, 2.0f, ColorAlpha((Color){ 168, 85, 247, 255 }, 0.3f));
-    DrawCircle(SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20, 4.0f, ColorAlpha((Color){ 168, 85, 247, 255 }, 0.5f));
-    DrawCircle(SCREEN_WIDTH - 150, SCREEN_HEIGHT - 50, 4.0f, ColorAlpha((Color){ 168, 85, 247, 255 }, 0.5f));
+    DrawLineEx((Vector2){SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20}, (Vector2){SCREEN_WIDTH - 120, SCREEN_HEIGHT - 20}, 2.0f, ColorAlpha(COLOR_NEON_PURPLE, 0.3f));
+    DrawLineEx((Vector2){SCREEN_WIDTH - 120, SCREEN_HEIGHT - 20}, (Vector2){SCREEN_WIDTH - 150, SCREEN_HEIGHT - 50}, 2.0f, ColorAlpha(COLOR_NEON_PURPLE, 0.3f));
+    DrawCircle(SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20, 4.0f, ColorAlpha(COLOR_NEON_PURPLE, 0.5f));
+    DrawCircle(SCREEN_WIDTH - 150, SCREEN_HEIGHT - 50, 4.0f, ColorAlpha(COLOR_NEON_PURPLE, 0.5f));
     
-    // Title with glowing accent
+    // 3. Draw Title with glowing accent
     const char* titleText = "LOGIC RUSH";
     int titleFontSize = 70;
     int titleWidth = MeasureText(titleText, titleFontSize);
     
-    // Multiple glow layers
-    Color glowColor = ColorAlpha((Color){ 59, 130, 246, 255 }, titleGlow * 0.4f);
+    Color glowColor = ColorAlpha(COLOR_GRID_LINE, titleGlow * 0.4f);
     DrawText(titleText, SCREEN_WIDTH / 2 - titleWidth / 2 + 4, SCREEN_HEIGHT / 4 + 4, titleFontSize, glowColor);
-    DrawText(titleText, SCREEN_WIDTH / 2 - titleWidth / 2, SCREEN_HEIGHT / 4, titleFontSize, (Color){ 96, 165, 250, 255 }); 
+    DrawText(titleText, SCREEN_WIDTH / 2 - titleWidth / 2, SCREEN_HEIGHT / 4, titleFontSize, COLOR_TEXT_CYBER); 
     
     // Subtitle
     const char* subtitleText = "Desafios Lógicos de Labirinto";
     int subtitleFontSize = 20;
     int subtitleWidth = MeasureText(subtitleText, subtitleFontSize);
-    DrawText(subtitleText, SCREEN_WIDTH / 2 - subtitleWidth / 2, SCREEN_HEIGHT / 4 + 90, subtitleFontSize, (Color){ 148, 163, 184, 255 }); 
+    DrawText(subtitleText, SCREEN_WIDTH / 2 - subtitleWidth / 2, SCREEN_HEIGHT / 4 + 90, subtitleFontSize, COLOR_TEXT_MUTED); 
     
-    // Draw Buttons
-    // Play Button
-    Color playGlow = playHover ? (Color){ 34, 197, 94, 255 } : (Color){ 59, 130, 246, 255 }; 
-    DrawRectangleRounded(playButton, 0.20f, 4, ColorAlpha((Color){ 15, 23, 42, 255 }, 0.80f));
-    DrawRectangleRoundedLines(playButton, 0.20f, 4, playGlow);
-    if (playHover) {
-        Rectangle glowPlay = { playButton.x - 2, playButton.y - 2, playButton.width + 4, playButton.height + 4 };
-        DrawRectangleRoundedLines(glowPlay, 0.20f, 4, ColorAlpha(playGlow, 0.4f));
-    }
+    // 4. Draw Vignette effect
+    DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
     
-    const char* playText = "INICIAR INTERFACE";
-    int playTextWidth = MeasureText(playText, 18);
-    DrawText(playText, playButton.x + playButton.width/2 - playTextWidth/2, playButton.y + playButton.height/2 - 9, 18, playGlow);
-    
-    // Exit Button
-    Color exitGlow = exitHover ? (Color){ 239, 68, 68, 255 } : (Color){ 71, 85, 105, 255 }; 
-    DrawRectangleRounded(exitButton, 0.20f, 4, ColorAlpha((Color){ 15, 23, 42, 255 }, 0.80f));
-    DrawRectangleRoundedLines(exitButton, 0.20f, 4, exitGlow);
-    if (exitHover) {
-        Rectangle glowExit = { exitButton.x - 2, exitButton.y - 2, exitButton.width + 4, exitButton.height + 4 };
-        DrawRectangleRoundedLines(glowExit, 0.20f, 4, ColorAlpha(exitGlow, 0.4f));
-    }
-    
-    const char* exitText = "FECHAR SISTEMA";
-    int exitTextWidth = MeasureText(exitText, 18);
-    DrawText(exitText, exitButton.x + exitButton.width/2 - exitTextWidth/2, exitButton.y + exitButton.height/2 - 9, 18, exitGlow);
+    // 5. Draw Buttons using theme helpers
+    DrawThemeButton(playButton, "INICIAR INTERFACE", 18, playHover, COLOR_NEON_GREEN);
+    DrawThemeButton(exitButton, "FECHAR SISTEMA", 18, exitHover, COLOR_NEON_RED);
     
     // Footer
     const char* footerText = "Use o mouse para interagir | Navegação WASD + E no jogo";
     int footerWidth = MeasureText(footerText, 14);
-    DrawText(footerText, SCREEN_WIDTH / 2 - footerWidth / 2, SCREEN_HEIGHT - 60, 14, (Color){ 71, 85, 105, 255 });
+    DrawText(footerText, SCREEN_WIDTH / 2 - footerWidth / 2, SCREEN_HEIGHT - 60, 14, COLOR_TEXT_MUTED);
 }
 
 void UnloadTitleScreen(void) {
