@@ -1,25 +1,42 @@
-CC = clang
 CFLAGS = -Wall -Wextra -std=c99
 
-# Auto-detect Homebrew path on macOS
-ifeq ($(shell uname), Darwin)
-    ifeq ($(shell uname -m), arm64)
-        BREW_PATH = /opt/homebrew
-    else
-        BREW_PATH = /usr/local
-    endif
-    CFLAGS += -I$(BREW_PATH)/include
-    LDFLAGS = -L$(BREW_PATH)/lib -lraylib -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+# ── Configuração por Sistema Operacional ─────────────────────────────────────────
+ifeq ($(OS), Windows_NT)
+    CC      = C:/raylib/w64devkit/bin/gcc.exe
+    CFLAGS += -IC:/raylib/raylib/src
+    LDFLAGS = -LC:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
+    TARGET  = logic_rush.exe
+    RUN_CMD = $(TARGET)
 else
-    # Linux fallback
-    LDFLAGS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S), Darwin)
+        ifeq ($(shell uname -m), arm64)
+            BREW = /opt/homebrew
+        else
+            BREW = /usr/local
+        endif
+        CC      = clang
+        CFLAGS += -I$(BREW)/include
+        LDFLAGS = -L$(BREW)/lib -lraylib \
+                  -framework OpenGL -framework Cocoa \
+                  -framework IOKit -framework CoreVideo
+    else
+        CC      = gcc
+        LDFLAGS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+    endif
+    TARGET  = logic_rush
+    RUN_CMD = ./$(TARGET)
 endif
 
-# Source files from structured subdirectories
-SRC = $(wildcard src/core/*.c) $(wildcard src/menu/*.c) $(wildcard src/fase_labirinto/*.c)
-OBJ = $(SRC:.c=.o)
-TARGET = logic_rush
+# ── Fontes e Objetos ─────────────────────────────────────────────────────────────
+SRC = $(wildcard src/core/*.c)           \
+      $(wildcard src/menu/*.c)           \
+      $(wildcard src/fase_labirinto/*.c) \
+      $(wildcard src/fase_boss/*.c)
 
+OBJ = $(SRC:.c=.o)
+
+# ── Regras ────────────────────────────────────────────────────────────────────────
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
@@ -28,10 +45,11 @@ $(TARGET): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-clean:
-	rm -f src/core/*.o src/menu/*.o src/fase_labirinto/*.o $(TARGET)
-
 run: $(TARGET)
-	./$(TARGET)
+	$(RUN_CMD)
+
+# Clean funciona nos 3 SOs (rm disponível no w64devkit e Git Bash)
+clean:
+	rm -f $(OBJ) $(TARGET)
 
 .PHONY: all clean run

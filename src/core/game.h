@@ -29,4 +29,10 @@ void UpdateGameplayScreen(void);
 void DrawGameplayScreen(void);
 void UnloadGameplayScreen(void);
 
+// Screen-specific lifecycle functions (implemented in fase_boss/fase_boss.c)
+void InitBossScreen(void);
+void UpdateBossScreen(void);
+void DrawBossScreen(void);
+void UnloadBossScreen(void);
+
 #endif // GAME_H
