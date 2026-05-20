@@ -26,9 +26,9 @@
 #define CUBE_W           230
 #define CUBE_H           92
 
-#define CUBE_TIME_S1     6.5f
-#define CUBE_TIME_S2     5.0f
-#define CUBE_TIME_S3     4.0f
+#define CUBE_TIME_S1     12.0f
+#define CUBE_TIME_S2     10.0f
+#define CUBE_TIME_S3     8.5f
 
 #define SPAWN_RATE_S1    4.5f
 #define SPAWN_RATE_S2    3.2f
@@ -1012,6 +1012,16 @@ static void DrawAnswerCards(float t) {
                  (int)(answerCards[i].x + answerCards[i].width/2 - textW/2),
                  (int)(answerCards[i].y + answerCards[i].height/2 - fontSize/2),
                  fontSize, textCol);
+
+        // DEBUG: mostra qual cartão é o correto — REMOVER antes do build final
+        if (!isFeedback && i == cube->correctOption) {
+            const char *dbg = "[OK]";
+            int dbgW = MeasureText(dbg, 11);
+            DrawText(dbg,
+                     (int)(answerCards[i].x + answerCards[i].width - dbgW - 6),
+                     (int)(answerCards[i].y + answerCards[i].height - 18),
+                     11, ColorAlpha(COLOR_NEON_GREEN, 0.70f));
+        }
 
         // Ícone de correto/errado no feedback
         if (isFeedback) {
