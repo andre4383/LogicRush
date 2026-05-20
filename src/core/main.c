@@ -3,7 +3,7 @@
 
 int main(void) {
     // Initialize Raylib window and OpenGL context
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "LogicRush - Fase 2");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Logic Rush — Desafios de Logica Proposicional");
     
     // Set rendering target frame rate
     SetTargetFPS(60);
