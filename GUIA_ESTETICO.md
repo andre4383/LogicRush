@@ -26,7 +26,29 @@ A identidade visual utiliza tons profundos e frios de azul-marinho como plano de
 
 ---
 
-## 🛠️ 2. Componentes de Interface Reutilizáveis (Visual Helpers)
+## 🔤 2. Sistema de Tipografia (Typography System)
+
+Para evitar a fonte bitmap padrão pixelada da Raylib, o Logic Rush utiliza a família de fontes **Inter** (Regular e Bold), renderizada em alta resolução (96px) com suporte a caracteres latinos acentuados.
+
+### A. Substituição Transparente da Raylib
+O arquivo [game.h](file:///Users/andremontenegro/Documents/Faculdade/SegundoPeriodo/LogicRush/src/core/game.h) redefine de forma transparente as funções nativas da Raylib utilizando macros associadas a funções inline estáticas de alta fidelidade:
+
+*   `DrawText(const char* text, int x, int y, int size, Color color)`: Desenha texto renderizado com a fonte **Inter Regular**.
+*   `MeasureText(const char* text, int size)`: Retorna a largura em pixels do texto desenhado com a fonte **Inter Regular**.
+*   `DrawTextBold(const char* text, int x, int y, int size, Color color)`: Desenha texto em negrito utilizando a fonte **Inter Bold**.
+*   `MeasureTextBold(const char* text, int size)`: Retorna a largura do texto em negrito.
+
+### B. Suporte a Acentuação em Português
+A fonte é carregada em tempo de inicialização no [game.c](file:///Users/andremontenegro/Documents/Faculdade/SegundoPeriodo/LogicRush/src/core/game.c) incluindo um array de codepoints Unicode dinâmico que cobre:
+*   ASCII padrão (`32` a `126`)
+*   Caracteres acentuados da língua portuguesa (`á, à, â, ã, é, ê, í, ó, ô, õ, ú, ç` e suas versões maiúsculas).
+
+### C. Filtro de Textura Bilinear
+Todas as texturas de fontes utilizam `TEXTURE_FILTER_BILINEAR` ativo, garantindo que o redimensionamento do texto (para tamanhos menores ou maiores que 96px) permaneça perfeitamente nítido e suavizado (anti-aliased).
+
+---
+
+## 🛠️ 3. Componentes de Interface Reutilizáveis (Visual Helpers)
 
 Em vez de pintar formas com funções genéricas de desenho da Raylib, utilize as funções embutidas em `theme.h`. Elas encapsulam animações e efeitos matemáticos em tempo real:
 
@@ -75,7 +97,7 @@ DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
 
 ---
 
-## 📏 3. Regras e Boas Práticas Estéticas
+## 📏 4. Regras e Boas Práticas Estéticas
 
 1. **Uso de Transparências (`ColorAlpha`)**:
    Nunca desenhe auras ou feixes de luz com opacidade 100%. Sempre adicione transparência (`0.15f` a `0.45f`) para simular reflexão luminosa (glow) realista.
