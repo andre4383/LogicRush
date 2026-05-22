@@ -2,6 +2,7 @@
 #define THEME_H
 
 #include "raylib.h"
+#include "game.h"
 #include <math.h>
 
 // ==================================================================================

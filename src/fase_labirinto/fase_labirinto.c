@@ -1,5 +1,6 @@
 #include "../core/game.h"
 #include "../core/screens.h"
+#include "../core/theme.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,19 +16,11 @@ typedef enum GateType {
     GATE_XOR
 } GateType;
 
-// Switches
-typedef struct {
-    int row, col;
-    bool active;
-    char label;
-    const char* desc;
-} SwitchInfo;
-
 // Barriers (Gates)
 typedef struct {
     int row, col;
     GateType type;
-    int inputs[2]; // Indices of switches in the array
+    int inputs[2]; // Indices of switches in the array (unused)
     bool open;
     Color color;
     const char* label;
@@ -41,13 +34,36 @@ typedef struct {
 
 // Active runtime state
 static int activeMaze[ROWS][COLS];
-static SwitchInfo activeSwitches[24];
-static int activeNumSwitches = 0;
-static BarrierInfo activeBarriers[16];
+static BarrierInfo activeBarriers[32];
 static int activeNumBarriers = 0;
 static int currentLevelIdx = 0;
 static char currentLevelName[128];
 static char currentObjective[256];
+
+// New gameplay state variables
+static Vector2 enemyPos;
+static float enemySpeed = 100.0f;
+static float enemyRadius = 12.0f;
+static Coord enemyPath[ROWS * COLS];
+static int enemyPathLen = 0;
+static float enemySpawnDelay = 3.0f;
+static int enemyPathUpdateTimer = 0;
+
+static bool isIntroActive = true;
+static bool isPropositionActive = false;
+static int activeBarrierChallengeIdx = -1;
+static int lastInteractedBarrierIdx = -1;
+static bool gameOver = false;
+static bool isGamePaused = false;
+static float errorCooldownTimer = 0.0f;
+
+typedef struct {
+    char questionText[256];
+    bool correctAnswer; // true = V, false = F
+    int selectedOption;  // 0 = None, 1 = V, 2 = F
+} PropositionQuestion;
+
+static PropositionQuestion currentQuestion;
 
 // DFS Maze Generator
 static void GenerateMazeDFS(int r, int c) {
@@ -146,30 +162,31 @@ static int FindMainPath(Coord path[], int maxLen) {
     return len;
 }
 
-// Safety check for switch placement
-static bool IsCellSafeForSwitch(Coord sw, Coord barrier) {
-    if (sw.r == barrier.r && sw.c == barrier.c) return false;
-    if (sw.r == 1 && sw.c == 1) return false;
-    if (sw.r == 15 && sw.c == 29) return false;
-    if (activeMaze[sw.r][sw.c] != 0) return false;
-    
+// Find path for the chasing enemy using BFS, treating closed barriers and walls as obstacles
+static int FindEnemyPath(Coord path[], int maxLen, Coord start, Coord goal) {
     Coord queue[ROWS * COLS];
     int head = 0, tail = 0;
     
     static bool visited[ROWS][COLS];
+    static Coord parent[ROWS][COLS];
+    
     for (int r = 0; r < ROWS; r++) {
         for (int c = 0; c < COLS; c++) {
             visited[r][c] = false;
+            parent[r][c] = (Coord){-1, -1};
         }
     }
     
-    queue[tail++] = (Coord){1, 1};
-    visited[1][1] = true;
+    queue[tail++] = start;
+    visited[start.r][start.c] = true;
+    
+    bool found = false;
     
     while (head < tail) {
         Coord curr = queue[head++];
-        if (curr.r == sw.r && curr.c == sw.c) {
-            return true;
+        if (curr.r == goal.r && curr.c == goal.c) {
+            found = true;
+            break;
         }
         
         Coord neighbors[4] = {
@@ -181,44 +198,113 @@ static bool IsCellSafeForSwitch(Coord sw, Coord barrier) {
             int nr = neighbors[i].r;
             int nc = neighbors[i].c;
             if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
-                if (nr == barrier.r && nc == barrier.c) continue;
-                if ((activeMaze[nr][nc] == 0 || activeMaze[nr][nc] == 2 || activeMaze[nr][nc] == 3) && !visited[nr][nc]) {
+                // Enemy can walk on: empty (0), spawn (2), goal (3)
+                // and open barriers. It cannot walk on walls (1) or closed barriers.
+                bool isWalkable = (activeMaze[nr][nc] == 0 || activeMaze[nr][nc] == 2 || activeMaze[nr][nc] == 3);
+                
+                // If it is a barrier, check if it's open
+                if (activeMaze[nr][nc] == 5 || activeMaze[nr][nc] == 6 || activeMaze[nr][nc] == 7 || activeMaze[nr][nc] == 8) {
+                    for (int b = 0; b < activeNumBarriers; b++) {
+                        if (activeBarriers[b].row == nr && activeBarriers[b].col == nc && activeBarriers[b].open) {
+                            isWalkable = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (isWalkable && !visited[nr][nc]) {
                     visited[nr][nc] = true;
+                    parent[nr][nc] = curr;
                     queue[tail++] = (Coord){nr, nc};
                 }
             }
         }
     }
     
-    return false;
+    if (!found) return 0;
+    
+    int len = 0;
+    Coord curr = goal;
+    while (curr.r != start.r || curr.c != start.c) {
+        if (len < maxLen) {
+            path[len++] = curr;
+        }
+        curr = parent[curr.r][curr.c];
+        if (curr.r == -1) break;
+    }
+    
+    // Reverse path to go from start to goal
+    for (int i = 0; i < len / 2; i++) {
+        Coord temp = path[i];
+        path[i] = path[len - 1 - i];
+        path[len - 1 - i] = temp;
+    }
+    
+    return len;
 }
 
-static Coord FindSafeSwitchLocation(Coord barrier) {
-    for (int attempts = 0; attempts < 1000; attempts++) {
-        int r = GetRandomValue(1, 15);
-        int c = GetRandomValue(1, 29);
-        if (activeMaze[r][c] == 0) {
-            Coord sw = {r, c};
-            if (IsCellSafeForSwitch(sw, barrier)) {
-                bool overlaps = false;
-                for (int i = 0; i < activeNumSwitches; i++) {
-                    if (activeSwitches[i].row == r && activeSwitches[i].col == c) {
-                        overlaps = true;
-                        break;
-                    }
-                }
-                if (!overlaps) return sw;
+// Generate dynamic logic propositions based on the barrier's gate type
+static void GeneratePropositionForGate(GateType type) {
+    int op = GetRandomValue(0, 2);
+    bool p = GetRandomValue(0, 1) == 1;
+    bool q = GetRandomValue(0, 1) == 1;
+    
+    currentQuestion.selectedOption = 0;
+    
+    switch (type) {
+        case GATE_NOT: {
+            if (op == 0) {
+                sprintf(currentQuestion.questionText, "Dada a proposicao P = %s.\nQual o valor de ~P (NOT P)?", p ? "V" : "F");
+                currentQuestion.correctAnswer = !p;
+            } else if (op == 1) {
+                sprintf(currentQuestion.questionText, "Se a proposicao P e %s,\nentao a sua negacao ~P e:", p ? "Verd. (V)" : "Falsa (F)");
+                currentQuestion.correctAnswer = !p;
+            } else {
+                sprintf(currentQuestion.questionText, "Qual o valor logico de ~(~P) se P = %s?", p ? "V" : "F");
+                currentQuestion.correctAnswer = p;
             }
+            break;
+        }
+        case GATE_AND: {
+            if (op == 0) {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de P ^ Q (AND)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = p && q;
+            } else if (op == 1) {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de P -> Q (Condicional)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = (!p || q);
+            } else {
+                sprintf(currentQuestion.questionText, "Para P = %s e Q = %s,\nqual o valor de ~(P ^ Q)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = !(p && q);
+            }
+            break;
+        }
+        case GATE_OR: {
+            if (op == 0) {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de P v Q (OR)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = p || q;
+            } else if (op == 1) {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de P <-> Q (Bicondicional)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = (p == q);
+            } else {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de ~P v Q?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = (!p || q);
+            }
+            break;
+        }
+        case GATE_XOR: {
+            if (op == 0) {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de P ⊕ Q (XOR)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = (p != q);
+            } else if (op == 1) {
+                sprintf(currentQuestion.questionText, "Se P = %s e Q = %s,\nqual o valor de ~(P ⊕ Q)?", p ? "V" : "F", q ? "V" : "F");
+                currentQuestion.correctAnswer = (p == q);
+            } else {
+                sprintf(currentQuestion.questionText, "Se P = %s,\nqual o valor de P -> ~P?", p ? "V" : "F");
+                currentQuestion.correctAnswer = !p;
+            }
+            break;
         }
     }
-    for (int r = 1; r <= 15; r++) {
-        for (int c = 1; c <= 29; c++) {
-            if (activeMaze[r][c] == 0 && !(r == barrier.r && c == barrier.c) && !(r == 1 && c == 1) && !(r == 15 && c == 29)) {
-                return (Coord){r, c};
-            }
-        }
-    }
-    return (Coord){1, 1};
 }
 
 static void GenerateProceduralLevel(void) {
@@ -242,289 +328,175 @@ static void GenerateProceduralLevel(void) {
     int pathLen = FindMainPath(mainPath, ROWS * COLS);
     
     // Clear active objects
-    activeNumSwitches = 0;
     activeNumBarriers = 0;
     
     int level = currentLevelIdx + 1;
     sprintf(currentLevelName, "FASE %d", level);
     
     if (level == 1) {
-        // NOT + AND
-        int barIdx1 = pathLen / 3;
-        int barIdx2 = (2 * pathLen) / 3;
-        
-        Coord barPos1 = mainPath[barIdx1];
-        Coord barPos2 = mainPath[barIdx2];
-        
-        activeMaze[barPos1.r][barPos1.c] = 7; // NOT Barrier
-        activeMaze[barPos2.r][barPos2.c] = 5; // AND Barrier
-        
-        Coord swPosE = FindSafeSwitchLocation(barPos1);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosE.r, swPosE.c, true, 'E', "Entrada da Porta NOT"};
-        
-        Coord swPosA = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosA.r, swPosA.c, false, 'A', "Entrada 1 da Porta AND"};
-        Coord swPosB = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosB.r, swPosB.c, false, 'B', "Entrada 2 da Porta AND"};
-        
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos1.r, barPos1.c, GATE_NOT, {0, -1}, false, (Color){ 249, 115, 22, 255 }, "PORTA NOT"
+        // 5 barriers
+        int num = 5;
+        GateType types[5] = { GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, GATE_NOT };
+        Color colors[5] = {
+            (Color){ 249, 115, 22, 255 },  // NOT (Orange)
+            (Color){ 59, 130, 246, 255 },  // AND (Blue)
+            (Color){ 234, 179, 8, 255 },   // OR (Yellow)
+            (Color){ 168, 85, 247, 255 },  // XOR (Purple)
+            (Color){ 244, 63, 94, 255 }    // NOT 2 (Rose)
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos2.r, barPos2.c, GATE_AND, {1, 2}, false, (Color){ 59, 130, 246, 255 }, "PORTA AND"
-        };
+        const char* labels[5] = { "PORTA NOT 1", "PORTA AND 1", "PORTA OR 1", "PORTA XOR 1", "PORTA NOT 2" };
+        int cellTypes[5] = { 7, 5, 8, 6, 7 }; // NOT=7, AND=5, OR=8, XOR=6
         
-        strcpy(currentObjective, "FASE 1: Desative E (NOT) e Ative A/B (AND) para avançar.");
+        for (int i = 0; i < num; i++) {
+            int idx = ((i + 1) * pathLen) / (num + 1);
+            Coord pos = mainPath[idx];
+            activeMaze[pos.r][pos.c] = cellTypes[i];
+            activeBarriers[activeNumBarriers++] = (BarrierInfo){
+                pos.r, pos.c, types[i], {i, -1}, false, colors[i], labels[i]
+            };
+        }
+        strcpy(currentObjective, "FASE 1: Resolva as 5 portas lógicas para fugir do Vírus!");
     }
     else if (level == 2) {
-        // NOT + AND + OR
-        int barIdx1 = pathLen / 4;
-        int barIdx2 = (2 * pathLen) / 4;
-        int barIdx3 = (3 * pathLen) / 4;
-        
-        Coord barPos1 = mainPath[barIdx1];
-        Coord barPos2 = mainPath[barIdx2];
-        Coord barPos3 = mainPath[barIdx3];
-        
-        activeMaze[barPos1.r][barPos1.c] = 7; // NOT Barrier
-        activeMaze[barPos2.r][barPos2.c] = 5; // AND Barrier
-        activeMaze[barPos3.r][barPos3.c] = 8; // OR Barrier
-        
-        Coord swPosE = FindSafeSwitchLocation(barPos1);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosE.r, swPosE.c, true, 'E', "Entrada da Porta NOT"};
-        
-        Coord swPosA = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosA.r, swPosA.c, false, 'A', "Entrada 1 da Porta AND"};
-        Coord swPosB = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosB.r, swPosB.c, false, 'B', "Entrada 2 da Porta AND"};
-        
-        Coord swPosC = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosC.r, swPosC.c, false, 'C', "Entrada 1 da Porta OR"};
-        Coord swPosD = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosD.r, swPosD.c, false, 'D', "Entrada 2 da Porta OR"};
-        
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos1.r, barPos1.c, GATE_NOT, {0, -1}, false, (Color){ 249, 115, 22, 255 }, "PORTA NOT"
+        // 7 barriers
+        int num = 7;
+        GateType types[7] = { GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, GATE_NOT, GATE_AND, GATE_OR };
+        Color colors[7] = {
+            (Color){ 249, 115, 22, 255 },  // Orange
+            (Color){ 59, 130, 246, 255 },  // Blue
+            (Color){ 234, 179, 8, 255 },   // Yellow
+            (Color){ 168, 85, 247, 255 },  // Purple
+            (Color){ 244, 63, 94, 255 },   // Rose
+            (Color){ 34, 211, 238, 255 },  // Cyan
+            (Color){ 253, 224, 71, 255 }   // Light Yellow
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos2.r, barPos2.c, GATE_AND, {1, 2}, false, (Color){ 59, 130, 246, 255 }, "PORTA AND"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos3.r, barPos3.c, GATE_OR, {3, 4}, false, (Color){ 234, 179, 8, 255 }, "PORTA OR"
-        };
+        const char* labels[7] = { "PORTA NOT 1", "PORTA AND 1", "PORTA OR 1", "PORTA XOR 1", "PORTA NOT 2", "PORTA AND 2", "PORTA OR 2" };
+        int cellTypes[7] = { 7, 5, 8, 6, 7, 5, 8 };
         
-        strcpy(currentObjective, "FASE 2: Abra NOT(E), AND(A/B) e OR(C/D).");
+        for (int i = 0; i < num; i++) {
+            int idx = ((i + 1) * pathLen) / (num + 1);
+            Coord pos = mainPath[idx];
+            activeMaze[pos.r][pos.c] = cellTypes[i];
+            activeBarriers[activeNumBarriers++] = (BarrierInfo){
+                pos.r, pos.c, types[i], {i, -1}, false, colors[i], labels[i]
+            };
+        }
+        strcpy(currentObjective, "FASE 2: Decodifique os 7 bloqueios lógicos rapidamente!");
     }
     else if (level == 3) {
-        // NOT + AND + XOR + OR
-        int barIdx1 = pathLen / 5;
-        int barIdx2 = (2 * pathLen) / 5;
-        int barIdx3 = (3 * pathLen) / 5;
-        int barIdx4 = (4 * pathLen) / 5;
-        
-        Coord barPos1 = mainPath[barIdx1];
-        Coord barPos2 = mainPath[barIdx2];
-        Coord barPos3 = mainPath[barIdx3];
-        Coord barPos4 = mainPath[barIdx4];
-        
-        activeMaze[barPos1.r][barPos1.c] = 7; // NOT
-        activeMaze[barPos2.r][barPos2.c] = 5; // AND
-        activeMaze[barPos3.r][barPos3.c] = 6; // XOR
-        activeMaze[barPos4.r][barPos4.c] = 8; // OR
-        
-        Coord swPosF = FindSafeSwitchLocation(barPos1);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosF.r, swPosF.c, true, 'F', "Entrada da Porta NOT"};
-        
-        Coord swPosA = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosA.r, swPosA.c, false, 'A', "Entrada 1 da AND"};
-        Coord swPosB = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosB.r, swPosB.c, false, 'B', "Entrada 2 da AND"};
-        
-        Coord swPosC = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosC.r, swPosC.c, false, 'C', "Entrada 1 da XOR"};
-        Coord swPosD = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosD.r, swPosD.c, false, 'D', "Entrada 2 da XOR"};
-        
-        Coord swPosE = FindSafeSwitchLocation(barPos4);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosE.r, swPosE.c, false, 'E', "Entrada 1 da OR"};
-        Coord swPosG = FindSafeSwitchLocation(barPos4);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosG.r, swPosG.c, false, 'G', "Entrada 2 da OR"};
-        
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos1.r, barPos1.c, GATE_NOT, {0, -1}, false, (Color){ 249, 115, 22, 255 }, "PORTA NOT"
+        // 9 barriers
+        int num = 9;
+        GateType types[9] = { GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, GATE_NOT };
+        Color colors[9] = {
+            (Color){ 249, 115, 22, 255 },
+            (Color){ 59, 130, 246, 255 },
+            (Color){ 234, 179, 8, 255 },
+            (Color){ 168, 85, 247, 255 },
+            (Color){ 244, 63, 94, 255 },
+            (Color){ 34, 211, 238, 255 },
+            (Color){ 253, 224, 71, 255 },
+            (Color){ 192, 132, 252, 255 }, // Light Purple
+            (Color){ 236, 72, 153, 255 }   // Pink
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos2.r, barPos2.c, GATE_AND, {1, 2}, false, (Color){ 59, 130, 246, 255 }, "PORTA AND"
+        const char* labels[9] = { 
+            "PORTA NOT 1", "PORTA AND 1", "PORTA OR 1", "PORTA XOR 1", 
+            "PORTA NOT 2", "PORTA AND 2", "PORTA OR 2", "PORTA XOR 2", 
+            "PORTA NOT 3" 
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos3.r, barPos3.c, GATE_XOR, {3, 4}, false, (Color){ 168, 85, 247, 255 }, "PORTA XOR"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos4.r, barPos4.c, GATE_OR, {5, 6}, false, (Color){ 234, 179, 8, 255 }, "PORTA OR"
-        };
+        int cellTypes[9] = { 7, 5, 8, 6, 7, 5, 8, 6, 7 };
         
-        strcpy(currentObjective, "FASE 3: Abra NOT(F), AND(A/B), XOR(C/D) e OR(E/G)!");
+        for (int i = 0; i < num; i++) {
+            int idx = ((i + 1) * pathLen) / (num + 1);
+            Coord pos = mainPath[idx];
+            activeMaze[pos.r][pos.c] = cellTypes[i];
+            activeBarriers[activeNumBarriers++] = (BarrierInfo){
+                pos.r, pos.c, types[i], {i, -1}, false, colors[i], labels[i]
+            };
+        }
+        strcpy(currentObjective, "FASE 3: Decodifique os 9 bloqueios sob crescente pressão!");
     }
     else if (level == 4) {
-        // NOT 1 + NOT 2 + AND 1 + AND 2 + XOR + OR
-        int barIdx1 = pathLen / 7;
-        int barIdx2 = (2 * pathLen) / 7;
-        int barIdx3 = (3 * pathLen) / 7;
-        int barIdx4 = (4 * pathLen) / 7;
-        int barIdx5 = (5 * pathLen) / 7;
-        int barIdx6 = (6 * pathLen) / 7;
-        
-        Coord barPos1 = mainPath[barIdx1];
-        Coord barPos2 = mainPath[barIdx2];
-        Coord barPos3 = mainPath[barIdx3];
-        Coord barPos4 = mainPath[barIdx4];
-        Coord barPos5 = mainPath[barIdx5];
-        Coord barPos6 = mainPath[barIdx6];
-        
-        activeMaze[barPos1.r][barPos1.c] = 7; // NOT 1
-        activeMaze[barPos2.r][barPos2.c] = 7; // NOT 2
-        activeMaze[barPos3.r][barPos3.c] = 5; // AND 1
-        activeMaze[barPos4.r][barPos4.c] = 5; // AND 2
-        activeMaze[barPos5.r][barPos5.c] = 6; // XOR
-        activeMaze[barPos6.r][barPos6.c] = 8; // OR
-        
-        Coord swPosH = FindSafeSwitchLocation(barPos1);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosH.r, swPosH.c, true, 'H', "Entrada da NOT 1"};
-        
-        Coord swPosI = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosI.r, swPosI.c, true, 'I', "Entrada da NOT 2"};
-        
-        Coord swPosA = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosA.r, swPosA.c, false, 'A', "Entrada 1 da AND 1"};
-        Coord swPosB = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosB.r, swPosB.c, false, 'B', "Entrada 2 da AND 1"};
-        
-        Coord swPosC = FindSafeSwitchLocation(barPos4);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosC.r, swPosC.c, false, 'C', "Entrada 1 da AND 2"};
-        Coord swPosD = FindSafeSwitchLocation(barPos4);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosD.r, swPosD.c, false, 'D', "Entrada 2 da AND 2"};
-        
-        Coord swPosE = FindSafeSwitchLocation(barPos5);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosE.r, swPosE.c, false, 'E', "Entrada 1 da XOR"};
-        Coord swPosF = FindSafeSwitchLocation(barPos5);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosF.r, swPosF.c, false, 'F', "Entrada 2 da XOR"};
-        
-        Coord swPosG = FindSafeSwitchLocation(barPos6);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosG.r, swPosG.c, false, 'G', "Entrada 1 da OR"};
-        Coord swPosJ = FindSafeSwitchLocation(barPos6);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosJ.r, swPosJ.c, false, 'J', "Entrada 2 da OR"};
-        
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos1.r, barPos1.c, GATE_NOT, {0, -1}, false, (Color){ 249, 115, 22, 255 }, "PORTA NOT 1"
+        // 12 barriers
+        int num = 12;
+        GateType types[12] = { 
+            GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, 
+            GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, 
+            GATE_NOT, GATE_AND, GATE_OR, GATE_XOR 
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos2.r, barPos2.c, GATE_NOT, {1, -1}, false, (Color){ 244, 63, 94, 255 }, "PORTA NOT 2"
+        Color colors[12] = {
+            (Color){ 249, 115, 22, 255 },
+            (Color){ 59, 130, 246, 255 },
+            (Color){ 234, 179, 8, 255 },
+            (Color){ 168, 85, 247, 255 }, // Purple
+            (Color){ 244, 63, 94, 255 },
+            (Color){ 34, 211, 238, 255 },
+            (Color){ 253, 224, 71, 255 },
+            (Color){ 192, 132, 252, 255 },
+            (Color){ 236, 72, 153, 255 },
+            (Color){ 14, 165, 233, 255 },
+            (Color){ 45, 212, 191, 255 }, // Teal
+            (Color){ 251, 146, 60, 255 }  // Light Orange
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos3.r, barPos3.c, GATE_AND, {2, 3}, false, (Color){ 59, 130, 246, 255 }, "PORTA AND 1"
+        const char* labels[12] = { 
+            "PORTA NOT 1", "PORTA AND 1", "PORTA OR 1", "PORTA XOR 1", 
+            "PORTA NOT 2", "PORTA AND 2", "PORTA OR 2", "PORTA XOR 2",
+            "PORTA NOT 3", "PORTA AND 3", "PORTA OR 3", "PORTA XOR 3"
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos4.r, barPos4.c, GATE_AND, {4, 5}, false, (Color){ 34, 211, 238, 255 }, "PORTA AND 2"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos5.r, barPos5.c, GATE_XOR, {6, 7}, false, (Color){ 168, 85, 247, 255 }, "PORTA XOR"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos6.r, barPos6.c, GATE_OR, {8, 9}, false, (Color){ 234, 179, 8, 255 }, "PORTA OR"
-        };
+        int cellTypes[12] = { 7, 5, 8, 6, 7, 5, 8, 6, 7, 5, 8, 6 };
         
-        strcpy(currentObjective, "FASE 4: Cruze NOTs(H/I), ANDs(A/B, C/D), XOR(E/F) e OR(G/J)!");
+        for (int i = 0; i < num; i++) {
+            int idx = ((i + 1) * pathLen) / (num + 1);
+            Coord pos = mainPath[idx];
+            activeMaze[pos.r][pos.c] = cellTypes[i];
+            activeBarriers[activeNumBarriers++] = (BarrierInfo){
+                pos.r, pos.c, types[i], {i, -1}, false, colors[i], labels[i]
+            };
+        }
+        strcpy(currentObjective, "FASE 4: O Vírus está muito agressivo! Resolva as 12 portas!");
     }
     else {
-        // NOT 1 + NOT 2 + AND 1 + AND 2 + XOR 1 + XOR 2 + OR 1 + OR 2 (8 barriers, 14 switches)
-        int barIdx1 = pathLen / 9;
-        int barIdx2 = (2 * pathLen) / 9;
-        int barIdx3 = (3 * pathLen) / 9;
-        int barIdx4 = (4 * pathLen) / 9;
-        int barIdx5 = (5 * pathLen) / 9;
-        int barIdx6 = (6 * pathLen) / 9;
-        int barIdx7 = (7 * pathLen) / 9;
-        int barIdx8 = (8 * pathLen) / 9;
-        
-        Coord barPos1 = mainPath[barIdx1];
-        Coord barPos2 = mainPath[barIdx2];
-        Coord barPos3 = mainPath[barIdx3];
-        Coord barPos4 = mainPath[barIdx4];
-        Coord barPos5 = mainPath[barIdx5];
-        Coord barPos6 = mainPath[barIdx6];
-        Coord barPos7 = mainPath[barIdx7];
-        Coord barPos8 = mainPath[barIdx8];
-        
-        activeMaze[barPos1.r][barPos1.c] = 7; // NOT 1
-        activeMaze[barPos2.r][barPos2.c] = 7; // NOT 2
-        activeMaze[barPos3.r][barPos3.c] = 5; // AND 1
-        activeMaze[barPos4.r][barPos4.c] = 5; // AND 2
-        activeMaze[barPos5.r][barPos5.c] = 6; // XOR 1
-        activeMaze[barPos6.r][barPos6.c] = 6; // XOR 2
-        activeMaze[barPos7.r][barPos7.c] = 8; // OR 1
-        activeMaze[barPos8.r][barPos8.c] = 8; // OR 2
-        
-        Coord swPosK = FindSafeSwitchLocation(barPos1);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosK.r, swPosK.c, true, 'K', "NOT 1"};
-        Coord swPosL = FindSafeSwitchLocation(barPos2);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosL.r, swPosL.c, true, 'L', "NOT 2"};
-        
-        Coord swPosA = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosA.r, swPosA.c, false, 'A', "AND 1 IN 1"};
-        Coord swPosB = FindSafeSwitchLocation(barPos3);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosB.r, swPosB.c, false, 'B', "AND 1 IN 2"};
-        
-        Coord swPosC = FindSafeSwitchLocation(barPos4);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosC.r, swPosC.c, false, 'C', "AND 2 IN 1"};
-        Coord swPosD = FindSafeSwitchLocation(barPos4);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosD.r, swPosD.c, false, 'D', "AND 2 IN 2"};
-        
-        Coord swPosE = FindSafeSwitchLocation(barPos5);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosE.r, swPosE.c, false, 'E', "XOR 1 IN 1"};
-        Coord swPosF = FindSafeSwitchLocation(barPos5);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosF.r, swPosF.c, false, 'F', "XOR 1 IN 2"};
-        
-        Coord swPosG = FindSafeSwitchLocation(barPos6);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosG.r, swPosG.c, false, 'G', "XOR 2 IN 1"};
-        Coord swPosH = FindSafeSwitchLocation(barPos6);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosH.r, swPosH.c, false, 'H', "XOR 2 IN 2"};
-        
-        Coord swPosI = FindSafeSwitchLocation(barPos7);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosI.r, swPosI.c, false, 'I', "OR 1 IN 1"};
-        Coord swPosJ = FindSafeSwitchLocation(barPos7);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosJ.r, swPosJ.c, false, 'J', "OR 1 IN 2"};
-        
-        Coord swPosM = FindSafeSwitchLocation(barPos8);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosM.r, swPosM.c, false, 'M', "OR 2 IN 1"};
-        Coord swPosN = FindSafeSwitchLocation(barPos8);
-        activeSwitches[activeNumSwitches++] = (SwitchInfo){swPosN.r, swPosN.c, false, 'N', "OR 2 IN 2"};
-        
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos1.r, barPos1.c, GATE_NOT, {0, -1}, false, (Color){ 249, 115, 22, 255 }, "PORTA NOT 1"
+        // 15 barriers
+        int num = 15;
+        GateType types[15] = { 
+            GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, 
+            GATE_NOT, GATE_AND, GATE_OR, GATE_XOR, 
+            GATE_NOT, GATE_AND, GATE_OR, GATE_XOR,
+            GATE_NOT, GATE_AND, GATE_OR
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos2.r, barPos2.c, GATE_NOT, {1, -1}, false, (Color){ 244, 63, 94, 255 }, "PORTA NOT 2"
+        Color colors[15] = {
+            (Color){ 249, 115, 22, 255 },
+            (Color){ 59, 130, 246, 255 },
+            (Color){ 234, 179, 8, 255 },
+            (Color){ 168, 85, 247, 255 },
+            (Color){ 244, 63, 94, 255 },
+            (Color){ 34, 211, 238, 255 },
+            (Color){ 253, 224, 71, 255 },
+            (Color){ 192, 132, 252, 255 },
+            (Color){ 236, 72, 153, 255 },
+            (Color){ 14, 165, 233, 255 },
+            (Color){ 45, 212, 191, 255 },
+            (Color){ 251, 146, 60, 255 },
+            (Color){ 248, 113, 113, 255 }, // Light Red
+            (Color){ 129, 140, 248, 255 }, // Indigo
+            (Color){ 52, 211, 153, 255 }   // Emerald
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos3.r, barPos3.c, GATE_AND, {2, 3}, false, (Color){ 59, 130, 246, 255 }, "PORTA AND 1"
+        const char* labels[15] = { 
+            "PORTA NOT 1", "PORTA AND 1", "PORTA OR 1", "PORTA XOR 1", 
+            "PORTA NOT 2", "PORTA AND 2", "PORTA OR 2", "PORTA XOR 2",
+            "PORTA NOT 3", "PORTA AND 3", "PORTA OR 3", "PORTA XOR 3",
+            "PORTA NOT 4", "PORTA AND 4", "PORTA OR 4"
         };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos4.r, barPos4.c, GATE_AND, {4, 5}, false, (Color){ 34, 211, 238, 255 }, "PORTA AND 2"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos5.r, barPos5.c, GATE_XOR, {6, 7}, false, (Color){ 168, 85, 247, 255 }, "PORTA XOR 1"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos6.r, barPos6.c, GATE_XOR, {8, 9}, false, (Color){ 192, 132, 252, 255 }, "PORTA XOR 2"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos7.r, barPos7.c, GATE_OR, {10, 11}, false, (Color){ 234, 179, 8, 255 }, "PORTA OR 1"
-        };
-        activeBarriers[activeNumBarriers++] = (BarrierInfo){
-            barPos8.r, barPos8.c, GATE_OR, {12, 13}, false, (Color){ 253, 224, 71, 255 }, "PORTA OR 2"
-        };
+        int cellTypes[15] = { 7, 5, 8, 6, 7, 5, 8, 6, 7, 5, 8, 6, 7, 5, 8 };
         
-        strcpy(currentObjective, "DESAFIO FINAL: Resolva 8 portas lógicas sequenciais para escapar!");
+        for (int i = 0; i < num; i++) {
+            int idx = ((i + 1) * pathLen) / (num + 1);
+            Coord pos = mainPath[idx];
+            activeMaze[pos.r][pos.c] = cellTypes[i];
+            activeBarriers[activeNumBarriers++] = (BarrierInfo){
+                pos.r, pos.c, types[i], {i, -1}, false, colors[i], labels[i]
+            };
+        }
+        strcpy(currentObjective, "DESAFIO FINAL: Supere 15 bloqueios lógicos para salvar o sistema!");
     }
 }
 
@@ -543,9 +515,6 @@ static float gameTimer = 0.0f;
 static bool gameWon = false;
 static float globalPulse = 0.0f;
 static int globalPulseDir = 1;
-
-// Current active switch near player (-1 if none)
-static int activeSwitchIdx = -1;
 
 // Helper function to clamp floats
 static float ClampFloat(float value, float min, float max) {
@@ -600,43 +569,22 @@ static bool CheckWallCollision(float px, float py, float radius) {
     return false;
 }
 
-// Evaluate logic gate states for active barriers
-static void EvaluateLogicGates(void) {
-    for (int i = 0; i < activeNumBarriers; i++) {
-        BarrierInfo* b = &activeBarriers[i];
-        if (b->type == GATE_NOT) {
-            int swIdx = b->inputs[0];
-            if (swIdx != -1 && swIdx < activeNumSwitches) {
-                b->open = !activeSwitches[swIdx].active;
-            }
-        } else if (b->type == GATE_AND) {
-            int swIdx1 = b->inputs[0];
-            int swIdx2 = b->inputs[1];
-            if (swIdx1 != -1 && swIdx1 < activeNumSwitches && swIdx2 != -1 && swIdx2 < activeNumSwitches) {
-                b->open = activeSwitches[swIdx1].active && activeSwitches[swIdx2].active;
-            }
-        } else if (b->type == GATE_OR) {
-            int swIdx1 = b->inputs[0];
-            int swIdx2 = b->inputs[1];
-            if (swIdx1 != -1 && swIdx1 < activeNumSwitches && swIdx2 != -1 && swIdx2 < activeNumSwitches) {
-                b->open = activeSwitches[swIdx1].active || activeSwitches[swIdx2].active;
-            }
-        } else if (b->type == GATE_XOR) {
-            int swIdx1 = b->inputs[0];
-            int swIdx2 = b->inputs[1];
-            if (swIdx1 != -1 && swIdx1 < activeNumSwitches && swIdx2 != -1 && swIdx2 < activeNumSwitches) {
-                b->open = (activeSwitches[swIdx1].active != activeSwitches[swIdx2].active);
-            }
-        }
-    }
-}
-
 // Reset level state and load active level data
 static void ResetLevel(void) {
     gameTimer = 0.0f;
     gameWon = false;
-    trailCount = 0;
-    activeSwitchIdx = -1;
+    gameOver = false;
+    isPropositionActive = false;
+    isGamePaused = false;
+    errorCooldownTimer = 0.0f;
+    activeBarrierChallengeIdx = -1;
+    lastInteractedBarrierIdx = -1;
+    enemySpawnDelay = 3.0f;
+    enemyPathLen = 0;
+    enemyPathUpdateTimer = 0;
+    
+    // Show intro popup on every level
+    isIntroActive = true;
     
     // Dynamically generate the maze and level elements!
     GenerateProceduralLevel();
@@ -645,7 +593,13 @@ static void ResetLevel(void) {
     playerPos.x = 1 * CELL_SIZE + CELL_SIZE / 2.0f;
     playerPos.y = 1 * CELL_SIZE + CELL_SIZE / 2.0f;
     
+    // Enemy spawn point is also (1,1)
+    enemyPos.x = 1 * CELL_SIZE + CELL_SIZE / 2.0f;
+    enemyPos.y = 1 * CELL_SIZE + CELL_SIZE / 2.0f;
+    enemySpeed = 110.0f + currentLevelIdx * 25.0f;
+    
     // Reset trail
+    trailCount = 0;
     for (int i = 0; i < MAX_TRAIL; i++) {
         playerTrail[i] = playerPos;
     }
@@ -658,6 +612,47 @@ void InitGameplayScreen(void) {
     globalPulseDir = 1;
 }
 
+static void UpdateEnemy(float dt) {
+    if (enemySpawnDelay > 0.0f) {
+        enemySpawnDelay -= dt;
+    } else {
+        enemyPathUpdateTimer++;
+        if (enemyPathUpdateTimer >= 10 || enemyPathLen == 0) {
+            enemyPathUpdateTimer = 0;
+            Coord eGrid = { (int)(enemyPos.y / CELL_SIZE), (int)(enemyPos.x / CELL_SIZE) };
+            Coord pGrid = { (int)(playerPos.y / CELL_SIZE), (int)(playerPos.x / CELL_SIZE) };
+            enemyPathLen = FindEnemyPath(enemyPath, ROWS * COLS, eGrid, pGrid);
+        }
+        
+        if (enemyPathLen > 0) {
+            Coord targetCell = enemyPath[0];
+            Vector2 targetPos = { targetCell.c * CELL_SIZE + CELL_SIZE / 2.0f, targetCell.r * CELL_SIZE + CELL_SIZE / 2.0f };
+            
+            // Move towards targetPos
+            Vector2 dir = { targetPos.x - enemyPos.x, targetPos.y - enemyPos.y };
+            float dist = sqrtf(dir.x * dir.x + dir.y * dir.y);
+            float step = enemySpeed * dt;
+            
+            if (dist <= step) {
+                enemyPos = targetPos;
+                for (int i = 0; i < enemyPathLen - 1; i++) {
+                    enemyPath[i] = enemyPath[i + 1];
+                }
+                enemyPathLen--;
+            } else {
+                enemyPos.x += (dir.x / dist) * step;
+                enemyPos.y += (dir.y / dist) * step;
+            }
+        }
+        
+        // Check collision between enemy and player
+        float distToPlayer = sqrtf((playerPos.x - enemyPos.x) * (playerPos.x - enemyPos.x) + (playerPos.y - enemyPos.y) * (playerPos.y - enemyPos.y));
+        if (distToPlayer < (enemyRadius + playerRadius)) {
+            gameOver = true;
+        }
+    }
+}
+
 void UpdateGameplayScreen(void) {
     if (gameWon) {
         if (IsKeyPressed(KEY_SPACE)) {
@@ -668,15 +663,212 @@ void UpdateGameplayScreen(void) {
                 currentLevelIdx = 0;
                 ResetLevel();
             }
+            return;
         }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            currentScreen = SCREEN_TITLE;
+            return;
+        }
+        
+        // Mouse click detection
+        Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
+        Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
+        Vector2 mousePos = GetMousePosition();
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (CheckCollisionPointRec(mousePos, btnNext)) {
+                if (currentLevelIdx < MAX_LEVELS - 1) {
+                    currentLevelIdx++;
+                    ResetLevel();
+                } else {
+                    currentLevelIdx = 0;
+                    ResetLevel();
+                }
+                return;
+            }
+            if (CheckCollisionPointRec(mousePos, btnMenu)) {
+                currentScreen = SCREEN_TITLE;
+                return;
+            }
+        }
+        return;
+    }
+    
+    if (gameOver) {
+        if (IsKeyPressed(KEY_SPACE)) {
+            ResetLevel();
+            return;
+        }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            currentScreen = SCREEN_TITLE;
+            return;
+        }
+        
+        // Mouse interaction for Game Over
+        Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
+        Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
+        Vector2 mousePos = GetMousePosition();
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (CheckCollisionPointRec(mousePos, btnRestart)) {
+                ResetLevel();
+                return;
+            }
+            if (CheckCollisionPointRec(mousePos, btnMenu)) {
+                currentScreen = SCREEN_TITLE;
+                return;
+            }
+        }
+        return;
+    }
+    
+    if (isIntroActive) {
+        if (IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)) {
+            isIntroActive = false;
+        }
+        
+        // Check for glass panel button click
+        Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f + 165, 200, 45 };
+        Vector2 mousePos = GetMousePosition();
+        if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            isIntroActive = false;
+        }
+        
+        // Quick exit to menu
         if (IsKeyPressed(KEY_ESCAPE)) {
             currentScreen = SCREEN_TITLE;
         }
         return;
     }
     
+    if (isPropositionActive) {
+        if (errorCooldownTimer > 0.0f) {
+            float dt = GetFrameTime();
+            errorCooldownTimer -= dt;
+            
+            // The virus keeps updating and can capture the player!
+            UpdateEnemy(dt);
+            
+            if (gameOver) {
+                isPropositionActive = false;
+                activeBarrierChallengeIdx = -1;
+                lastInteractedBarrierIdx = -1;
+                errorCooldownTimer = 0.0f;
+                return;
+            }
+            
+            if (errorCooldownTimer <= 0.0f) {
+                errorCooldownTimer = 0.0f;
+                // Incorrect answer!
+                // Push player back
+                if (activeBarrierChallengeIdx >= 0 && activeBarrierChallengeIdx < activeNumBarriers) {
+                    BarrierInfo b = activeBarriers[activeBarrierChallengeIdx];
+                    Vector2 barCenter = { b.col * CELL_SIZE + CELL_SIZE / 2.0f, b.row * CELL_SIZE + CELL_SIZE / 2.0f };
+                    Vector2 dir = { playerPos.x - barCenter.x, playerPos.y - barCenter.y };
+                    float len = sqrtf(dir.x * dir.x + dir.y * dir.y);
+                    if (len > 0.0f) {
+                        dir.x /= len;
+                        dir.y /= len;
+                    } else {
+                        dir.x = -1.0f; dir.y = 0.0f; // Default push direction
+                    }
+                    
+                    for (float d = 40.0f; d >= 15.0f; d -= 5.0f) {
+                        Vector2 newPos = { barCenter.x + dir.x * d, barCenter.y + dir.y * d };
+                        if (!CheckWallCollision(newPos.x, newPos.y, playerRadius)) {
+                            playerPos = newPos;
+                            break;
+                        }
+                    }
+                    // Generate new question for next try
+                    GeneratePropositionForGate(b.type);
+                }
+                isPropositionActive = false;
+                activeBarrierChallengeIdx = -1;
+            }
+            
+            // Quick exit to menu
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                currentScreen = SCREEN_TITLE;
+                errorCooldownTimer = 0.0f;
+                lastInteractedBarrierIdx = -1;
+            }
+            return;
+        }
+
+        // Option buttons in Proposition Overlay
+        Rectangle challengeRect = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 160, 500, 300 };
+        Rectangle btnV = { SCREEN_WIDTH / 2.0f - 140, challengeRect.y + 180, 120, 50 };
+        Rectangle btnF = { SCREEN_WIDTH / 2.0f + 20, challengeRect.y + 180, 120, 50 };
+        
+        Vector2 mousePos = GetMousePosition();
+        bool hoveredV = CheckCollisionPointRec(mousePos, btnV);
+        bool hoveredF = CheckCollisionPointRec(mousePos, btnF);
+        
+        bool choseTrue = false;
+        bool choseFalse = false;
+        
+        if (IsKeyPressed(KEY_V)) choseTrue = true;
+        if (IsKeyPressed(KEY_F)) choseFalse = true;
+        
+        if (hoveredV && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseTrue = true;
+        if (hoveredF && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseFalse = true;
+        
+        if (choseTrue || choseFalse) {
+            bool answer = choseTrue;
+            if (answer == currentQuestion.correctAnswer) {
+                // Correct answer! Open barrier and unfreeze
+                if (activeBarrierChallengeIdx >= 0 && activeBarrierChallengeIdx < activeNumBarriers) {
+                    activeBarriers[activeBarrierChallengeIdx].open = true;
+                }
+                isPropositionActive = false;
+                activeBarrierChallengeIdx = -1;
+                lastInteractedBarrierIdx = -1;
+            } else {
+                // Incorrect answer! Start 5 second cooldown
+                errorCooldownTimer = 5.0f;
+            }
+        }
+        
+        // Quick exit to menu
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            currentScreen = SCREEN_TITLE;
+            errorCooldownTimer = 0.0f;
+            lastInteractedBarrierIdx = -1;
+        }
+        return;
+    }
+    
+    if (isGamePaused) {
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            isGamePaused = false;
+            return;
+        }
+        
+        // Mouse interaction for Pause Screen
+        Rectangle card = { SCREEN_WIDTH / 2.0f - 200, SCREEN_HEIGHT / 2.0f - 120, 400, 240 };
+        Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
+        
+        Vector2 mousePos = GetMousePosition();
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (CheckCollisionPointRec(mousePos, btnResume)) {
+                isGamePaused = false;
+                return;
+            }
+            if (CheckCollisionPointRec(mousePos, btnMenu)) {
+                currentScreen = SCREEN_TITLE;
+                return;
+            }
+        }
+        return;
+    }
+    
+    // Normal Gameplay loop
+    float dt = GetFrameTime();
+    
     // Update timer
-    gameTimer += GetFrameTime();
+    gameTimer += dt;
     
     // Pulsate target goal and elements
     globalPulse += 0.03f * globalPulseDir;
@@ -688,11 +880,7 @@ void UpdateGameplayScreen(void) {
         globalPulseDir = 1;
     }
     
-    // Evaluate logic gate states for barriers
-    EvaluateLogicGates();
-    
     // Movement inputs
-    float dt = GetFrameTime();
     float dx = 0.0f;
     float dy = 0.0f;
     
@@ -720,19 +908,34 @@ void UpdateGameplayScreen(void) {
     playerTrail[0] = playerPos;
     if (trailCount < MAX_TRAIL) trailCount++;
     
-    // Check switch collision/proximity (interact with E)
-    activeSwitchIdx = -1;
-    for (int i = 0; i < activeNumSwitches; i++) {
-        float swX = activeSwitches[i].col * CELL_SIZE + CELL_SIZE / 2.0f;
-        float swY = activeSwitches[i].row * CELL_SIZE + CELL_SIZE / 2.0f;
-        float dist = sqrtf((playerPos.x - swX) * (playerPos.x - swX) + (playerPos.y - swY) * (playerPos.y - swY));
-        
-        if (dist < 32.0f) {
-            activeSwitchIdx = i;
-            if (IsKeyPressed(KEY_E)) {
-                activeSwitches[i].active = !activeSwitches[i].active;
+    // Update Enemy (Virus)
+    UpdateEnemy(dt);
+    
+    // Reset lastInteractedBarrierIdx if player moves away from it
+    if (lastInteractedBarrierIdx != -1) {
+        BarrierInfo* b = &activeBarriers[lastInteractedBarrierIdx];
+        float bX = b->col * CELL_SIZE + CELL_SIZE / 2.0f;
+        float bY = b->row * CELL_SIZE + CELL_SIZE / 2.0f;
+        float dist = sqrtf((playerPos.x - bX) * (playerPos.x - bX) + (playerPos.y - bY) * (playerPos.y - bY));
+        if (dist >= 45.0f) {
+            lastInteractedBarrierIdx = -1;
+        }
+    }
+    
+    // Check player proximity to closed barriers to trigger logic challenges
+    for (int i = 0; i < activeNumBarriers; i++) {
+        BarrierInfo* b = &activeBarriers[i];
+        if (!b->open && i != lastInteractedBarrierIdx) {
+            float bX = b->col * CELL_SIZE + CELL_SIZE / 2.0f;
+            float bY = b->row * CELL_SIZE + CELL_SIZE / 2.0f;
+            float dist = sqrtf((playerPos.x - bX) * (playerPos.x - bX) + (playerPos.y - bY) * (playerPos.y - bY));
+            if (dist < 39.0f) {
+                isPropositionActive = true;
+                activeBarrierChallengeIdx = i;
+                lastInteractedBarrierIdx = i;
+                GeneratePropositionForGate(b->type);
+                break;
             }
-            break;
         }
     }
     
@@ -745,70 +948,18 @@ void UpdateGameplayScreen(void) {
         }
     }
     
-    // Quick exit to menu
+    // Pause the game when ESC is pressed
     if (IsKeyPressed(KEY_ESCAPE)) {
-        currentScreen = SCREEN_TITLE;
-    }
-}
-
-// Draw circuit trace with right angles and moving electrons
-static void DrawCircuitWire(Vector2 start, Vector2 end, bool active) {
-    Color col = active ? (Color){ 34, 197, 94, 255 } : (Color){ 71, 85, 105, 255 }; // active green, inactive slate
-    Color glowCol = active ? ColorAlpha((Color){ 34, 197, 94, 255 }, 0.25f) : ColorAlpha((Color){ 71, 85, 105, 255 }, 0.05f);
-    Vector2 mid = { end.x, start.y };
-    
-    // Glow line (thicker)
-    DrawLineEx(start, mid, 6.0f, glowCol);
-    DrawLineEx(mid, end, 6.0f, glowCol);
-    
-    // Core line (thinner)
-    DrawLineEx(start, mid, 2.5f, col);
-    DrawLineEx(mid, end, 2.5f, col);
-    
-    // Draw animated electrons flowing along the path if active
-    if (active) {
-        float time = (float)GetTime();
-        float speed = 120.0f; // pixels per second
-        
-        float segment1 = fabsf(mid.x - start.x);
-        float segment2 = fabsf(end.y - mid.y);
-        float totalLen = segment1 + segment2;
-        
-        if (totalLen > 0) {
-            for (int e = 0; e < 2; e++) {
-                float progress = fmodf(time * speed + e * (totalLen / 2.0f), totalLen);
-                Vector2 electronPos;
-                
-                if (progress < segment1) {
-                    float t = progress / segment1;
-                    electronPos.x = start.x + (mid.x - start.x) * t;
-                    electronPos.y = start.y;
-                } else {
-                    float t = (progress - segment1) / segment2;
-                    electronPos.x = mid.x;
-                    electronPos.y = mid.y + (end.y - mid.y) * t;
-                }
-                
-                DrawCircleV(electronPos, 3.5f, (Color){ 241, 245, 249, 255 });
-                DrawCircleV(electronPos, 6.0f, ColorAlpha((Color){ 74, 222, 128, 255 }, 0.6f));
-            }
-        }
+        isGamePaused = true;
     }
 }
 
 void DrawGameplayScreen(void) {
     // Cyber Cadet dark blue/black background
-    ClearBackground((Color){ 10, 15, 26, 255 }); 
+    ClearBackground(COLOR_BG_DARK); 
     
     // Draw background grid lines (cyber style)
-    for (int x = 0; x < SCREEN_WIDTH; x += CELL_SIZE) {
-        Color col = (x % (CELL_SIZE * 4) == 0) ? ColorAlpha((Color){ 59, 130, 246, 255 }, 0.08f) : ColorAlpha((Color){ 59, 130, 246, 255 }, 0.03f);
-        DrawLine(x, CELL_SIZE, x, SCREEN_HEIGHT, col);
-    }
-    for (int y = CELL_SIZE; y < SCREEN_HEIGHT; y += CELL_SIZE) {
-        Color col = (y % (CELL_SIZE * 4) == 0) ? ColorAlpha((Color){ 59, 130, 246, 255 }, 0.08f) : ColorAlpha((Color){ 59, 130, 246, 255 }, 0.03f);
-        DrawLine(0, y, SCREEN_WIDTH, y, col);
-    }
+    DrawThemeGrid(SCREEN_WIDTH, SCREEN_HEIGHT, CELL_SIZE);
     
     // Floating tech particles in the background (ambient depth)
     float timeVal = (float)GetTime();
@@ -818,23 +969,8 @@ void DrawGameplayScreen(void) {
         float px = (i * 81 + (int)(phaseX * 140.0f)) % SCREEN_WIDTH;
         float py = (i * 53 + (int)(phaseY * 110.0f)) % (SCREEN_HEIGHT - CELL_SIZE) + CELL_SIZE;
         float size = 1.0f + fabsf(sinf(timeVal + i)) * 1.5f;
-        DrawCircle(px, py, size, ColorAlpha((Color){ 96, 165, 250, 255 }, 0.12f));
-        DrawCircleLines(px, py, size + 2.0f, ColorAlpha((Color){ 96, 165, 250, 255 }, 0.04f));
-    }
-    
-    // Draw circuit wires on the floor under everything
-    for (int i = 0; i < activeNumBarriers; i++) {
-        BarrierInfo b = activeBarriers[i];
-        Vector2 endPos = { b.col * CELL_SIZE + CELL_SIZE / 2.0f, b.row * CELL_SIZE + CELL_SIZE / 2.0f };
-        
-        for (int j = 0; j < 2; j++) {
-            int swIdx = b.inputs[j];
-            if (swIdx != -1 && swIdx < activeNumSwitches) {
-                SwitchInfo sw = activeSwitches[swIdx];
-                Vector2 startPos = { sw.col * CELL_SIZE + CELL_SIZE / 2.0f, sw.row * CELL_SIZE + CELL_SIZE / 2.0f };
-                DrawCircuitWire(startPos, endPos, sw.active);
-            }
-        }
+        DrawCircle(px, py, size, ColorAlpha(COLOR_TEXT_CYBER, 0.12f));
+        DrawCircleLines(px, py, size + 2.0f, ColorAlpha(COLOR_TEXT_CYBER, 0.04f));
     }
     
     // Draw Maze Cells, Walls, and Barriers
@@ -846,8 +982,8 @@ void DrawGameplayScreen(void) {
             
             if (cellType == 1) {
                 // Wall - Cybertech Panel look
-                DrawRectangle(cellX, cellY, CELL_SIZE, CELL_SIZE, (Color){ 13, 20, 35, 255 }); 
-                DrawRectangleLines(cellX, cellY, CELL_SIZE, CELL_SIZE, (Color){ 20, 30, 50, 255 });
+                DrawRectangle(cellX, cellY, CELL_SIZE, CELL_SIZE, COLOR_PANEL_BG); 
+                DrawRectangleLines(cellX, cellY, CELL_SIZE, CELL_SIZE, COLOR_PANEL_BORDER);
                 
                 // Sci-fi corners
                 DrawRectangle(cellX + 1, cellY + 1, 3, 3, (Color){ 30, 58, 138, 255 });
@@ -861,16 +997,16 @@ void DrawGameplayScreen(void) {
                 float cy = cellY + CELL_SIZE / 2.0f;
                 float portalTime = (float)GetTime();
                 
-                DrawCircle(cx, cy, 18.0f + globalPulse * 4.0f, ColorAlpha((Color){ 217, 70, 239, 255 }, 0.20f)); // Aura
-                DrawCircleLines(cx, cy, 14.0f + sinf(portalTime * 6.0f) * 2.0f, (Color){ 236, 72, 153, 255 }); // Rotating ring 1
-                DrawCircleLines(cx, cy, 10.0f - sinf(portalTime * 6.0f) * 2.0f, (Color){ 168, 85, 247, 255 }); // Rotating ring 2
+                DrawCircle(cx, cy, 18.0f + globalPulse * 4.0f, ColorAlpha(COLOR_NEON_MAGENTA, 0.20f)); // Aura
+                DrawCircleLines(cx, cy, 14.0f + sinf(portalTime * 6.0f) * 2.0f, COLOR_NEON_MAGENTA); // Rotating ring 1
+                DrawCircleLines(cx, cy, 10.0f - sinf(portalTime * 6.0f) * 2.0f, COLOR_NEON_PURPLE); // Rotating ring 2
                 
                 // Cyber spark lines radiating outward
                 for (int i = 0; i < 4; i++) {
                     float angle = portalTime * 3.0f + i * (PI / 2.0f);
                     Vector2 start = { cx + cosf(angle) * 4.0f, cy + sinf(angle) * 4.0f };
                     Vector2 end = { cx + cosf(angle) * 12.0f, cy + sinf(angle) * 12.0f };
-                    DrawLineEx(start, end, 1.5f, ColorAlpha((Color){ 217, 70, 239, 255 }, 0.6f));
+                    DrawLineEx(start, end, 1.5f, ColorAlpha(COLOR_NEON_MAGENTA, 0.6f));
                 }
                 
                 DrawCircle(cx, cy, 5.0f, WHITE); // Core center
@@ -912,105 +1048,232 @@ void DrawGameplayScreen(void) {
         }
     }
     
-    // Draw Switches on the floor
-    for (int i = 0; i < activeNumSwitches; i++) {
-        SwitchInfo sw = activeSwitches[i];
-        float cx = sw.col * CELL_SIZE + CELL_SIZE / 2.0f;
-        float cy = sw.row * CELL_SIZE + CELL_SIZE / 2.0f;
-        
-        Color lightCol = sw.active ? (Color){ 34, 197, 94, 255 } : (Color){ 239, 68, 68, 255 }; 
-        
-        // tech terminal plate
-        DrawRectangle(sw.col * CELL_SIZE + 4, sw.row * CELL_SIZE + 4, CELL_SIZE - 8, CELL_SIZE - 8, (Color){ 20, 27, 45, 255 });
-        DrawRectangleRoundedLines((Rectangle){(float)(sw.col * CELL_SIZE + 4), (float)(sw.row * CELL_SIZE + 4), (float)(CELL_SIZE - 8), (float)(CELL_SIZE - 8)}, 0.15f, 4, ColorAlpha(lightCol, 0.45f));
-        
-        // Outer light ring
-        DrawCircleLines(cx, cy, 13.0f, ColorAlpha(lightCol, 0.35f));
-        
-        // Inner button core
-        DrawCircle(cx, cy, 6.0f, (Color){ 10, 15, 26, 255 });
-        DrawCircle(cx, cy, 4.0f, lightCol);
-        DrawCircle(cx, cy, 1.5f, WHITE);
-        
-        // Proximity radar pulse
-        if (activeSwitchIdx == i) {
-            float pulseScale = 14.0f + sinf(GetTime() * 10.0f) * 4.0f;
-            DrawCircleLines(cx, cy, pulseScale, ColorAlpha(lightCol, 0.7f));
-        }
-        
-        // Label
-        char labelStr[2] = { sw.label, '\0' };
-        DrawText(labelStr, cx - 4, cy - 20, 10, (Color){ 148, 163, 184, 255 });
-    }
-    
     // Draw Player Trail (glowing cyber cyan trail)
     for (int i = trailCount - 1; i >= 0; i--) {
         float factor = (float)(MAX_TRAIL - i) / MAX_TRAIL;
-        Color trailColor = ColorAlpha((Color){ 34, 211, 238, 255 }, factor * 0.40f); 
+        Color trailColor = ColorAlpha(COLOR_NEON_CYAN, factor * 0.40f); 
         DrawCircleV(playerTrail[i], playerRadius * factor, trailColor);
     }
     
     // Draw Player
     float playerTime = (float)GetTime();
     float glowRadius = playerRadius + 4.0f + sinf(playerTime * 12.0f) * 2.0f;
-    DrawCircle(playerPos.x, playerPos.y, glowRadius, ColorAlpha((Color){ 34, 197, 94, 255 }, 0.20f)); 
-    DrawCircleV(playerPos, playerRadius, (Color){ 34, 197, 94, 255 }); 
+    DrawCircle(playerPos.x, playerPos.y, glowRadius, ColorAlpha(COLOR_NEON_GREEN, 0.20f)); 
+    DrawCircleV(playerPos, playerRadius, COLOR_NEON_GREEN); 
     DrawCircleV(playerPos, playerRadius - 4.0f, (Color){ 187, 247, 208, 255 }); 
-    DrawCircleLines(playerPos.x, playerPos.y, playerRadius + 2.0f, ColorAlpha((Color){ 241, 245, 249, 255 }, 0.4f));
+    DrawCircleLines(playerPos.x, playerPos.y, playerRadius + 2.0f, ColorAlpha(COLOR_TEXT_MAIN, 0.4f));
     
-    // Draw Glowing Laser Beam connecting player and switch when nearby
-    if (activeSwitchIdx != -1) {
-        SwitchInfo sw = activeSwitches[activeSwitchIdx];
-        Vector2 swPos = { sw.col * CELL_SIZE + CELL_SIZE / 2.0f, sw.row * CELL_SIZE + CELL_SIZE / 2.0f };
-        float beamTime = (float)GetTime();
-        Color beamColor = ColorAlpha((Color){ 34, 211, 238, 255 }, 0.45f + sinf(beamTime * 15.0f) * 0.15f);
-        DrawLineEx(playerPos, swPos, 2.0f, beamColor);
-        DrawCircleV(swPos, 16.0f + sinf(beamTime * 12.0f) * 3.0f, ColorAlpha((Color){ 34, 211, 238, 255 }, 0.18f));
+    // Draw Enemy (Virus)
+    if (enemySpawnDelay > 0.0f) {
+        // Spawning effect: flashing hazard circle
+        float pulse = sinf(GetTime() * 15.0f) * 0.5f + 0.5f;
+        DrawCircleLines(enemyPos.x, enemyPos.y, enemyRadius + 8.0f + pulse * 6.0f, ColorAlpha(COLOR_NEON_RED, 0.8f));
+        DrawCircle(enemyPos.x, enemyPos.y, enemyRadius + 4.0f, ColorAlpha(COLOR_NEON_RED, 0.2f * pulse));
+        DrawText("WARN", enemyPos.x - 14, enemyPos.y - 4, 10, COLOR_NEON_RED);
+    } else {
+        // Active Enemy: Glowing red glitchy core
+        float virusTime = (float)GetTime();
+        float glowRadius = enemyRadius + 5.0f + sinf(virusTime * 20.0f) * 3.0f;
+        
+        // Aura
+        DrawCircle(enemyPos.x, enemyPos.y, glowRadius, ColorAlpha(COLOR_NEON_RED, 0.25f));
+        
+        // Inner spiked glitch triangles
+        for (int i = 0; i < 4; i++) {
+            float angle = virusTime * 5.0f + i * (PI / 2.0f);
+            float gl = 4.0f + sinf(virusTime * 30.0f + i) * 3.0f;
+            Vector2 p1 = { enemyPos.x + cosf(angle) * (enemyRadius + gl), enemyPos.y + sinf(angle) * (enemyRadius + gl) };
+            Vector2 p2 = { enemyPos.x + cosf(angle + 0.3f) * (enemyRadius - 4.0f), enemyPos.y + sinf(angle + 0.3f) * (enemyRadius - 4.0f) };
+            Vector2 p3 = { enemyPos.x + cosf(angle - 0.3f) * (enemyRadius - 4.0f), enemyPos.y + sinf(angle - 0.3f) * (enemyRadius - 4.0f) };
+            DrawTriangle(p1, p2, p3, COLOR_NEON_RED);
+        }
+        
+        // Core center
+        DrawCircleV(enemyPos, enemyRadius - 2.0f, COLOR_NEON_RED);
+        DrawCircleV(enemyPos, enemyRadius - 6.0f, BLACK);
+        DrawCircleV(enemyPos, 3.0f, WHITE);
     }
     
     // Ambient vignette corners (vignette overlay for cinematic feel)
-    DrawRectangleGradientV(0, 0, SCREEN_WIDTH, 40, ColorAlpha(BLACK, 0.45f), ColorAlpha(BLACK, 0.0f));
-    DrawRectangleGradientV(0, SCREEN_HEIGHT - 40, SCREEN_WIDTH, 40, ColorAlpha(BLACK, 0.0f), ColorAlpha(BLACK, 0.45f));
-    DrawRectangleGradientH(0, 0, 40, SCREEN_HEIGHT, ColorAlpha(BLACK, 0.45f), ColorAlpha(BLACK, 0.0f));
-    DrawRectangleGradientH(SCREEN_WIDTH - 40, 0, 40, SCREEN_HEIGHT, ColorAlpha(BLACK, 0.0f), ColorAlpha(BLACK, 0.45f));
+    DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
     
     // Floating Glassmorphic HUD overlay top panel
-    DrawRectangleRounded((Rectangle){ 15, 10, SCREEN_WIDTH - 30, CELL_SIZE }, 0.20f, 4, ColorAlpha((Color){ 13, 20, 35, 255 }, 0.85f));
-    DrawRectangleRoundedLines((Rectangle){ 15, 10, SCREEN_WIDTH - 30, CELL_SIZE }, 0.20f, 4, ColorAlpha((Color){ 59, 130, 246, 255 }, 0.25f));
+    DrawThemeGlassPanel((Rectangle){ 15, 10, SCREEN_WIDTH - 30, CELL_SIZE }, 0.20f, ColorAlpha(COLOR_GRID_LINE, 0.25f));
     
     char hudTitle[128];
     sprintf(hudTitle, "LOGIC RUSH: %s", currentLevelName);
-    DrawText(hudTitle, 35, 20, 20, (Color){ 96, 165, 250, 255 });
+    DrawText(hudTitle, 35, 20, 20, COLOR_TEXT_CYBER);
     
     char timerText[32];
     sprintf(timerText, "Tempo: %.1f s", gameTimer);
-    DrawText(timerText, SCREEN_WIDTH - 220, 20, 20, (Color){ 241, 245, 249, 255 });
+    DrawText(timerText, SCREEN_WIDTH - 220, 20, 20, COLOR_TEXT_MAIN);
     
-    DrawText("ESC: Voltar ao Menu | WASD / Setas: Mover", SCREEN_WIDTH / 2 - 180, 23, 14, (Color){ 148, 163, 184, 255 });
+    DrawText("ESC: Voltar ao Menu | WASD/Setas: Mover", SCREEN_WIDTH / 2 - 180, 23, 14, COLOR_TEXT_MUTED);
     
-    // Draw Prompt to Toggle Switch
-    if (activeSwitchIdx != -1) {
-        SwitchInfo sw = activeSwitches[activeSwitchIdx];
-        char promptText[128];
-        sprintf(promptText, "Pressione [E] para alternar o interruptor %c (%s) -> %s", 
-                sw.label, sw.desc, sw.active ? "DESLIGAR" : "LIGAR");
+    // Draw level objective at the bottom center
+    const char* objText = currentObjective;
+    int textW = MeasureText(objText, 14);
+    Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 45, textW + 40, 30 };
+    DrawThemeGlassPanel(tooltip, 0.25f, ColorAlpha(COLOR_TEXT_MUTED, 0.4f));
+    DrawText(objText, tooltip.x + 20, tooltip.y + 8, 14, COLOR_TEXT_MAIN);
+    
+    // Draw Intro Pop-up Overlay
+    if (isIntroActive) {
+        // Draw overlay background (darken the screen)
+        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha(BLACK, 0.75f));
         
-        int textW = MeasureText(promptText, 16);
+        // Main modal container
+        Rectangle popupRect = { SCREEN_WIDTH / 2.0f - 300, SCREEN_HEIGHT / 2.0f - 230, 600, 460 };
+        DrawThemeGlassPanel(popupRect, 0.10f, COLOR_GRID_LINE);
         
-        // Translucent background card for tooltip
-        Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 65, textW + 40, 40 };
-        DrawRectangleRounded(tooltip, 0.25f, 4, ColorAlpha((Color){ 15, 23, 42, 255 }, 0.85f));
-        DrawRectangleRoundedLines(tooltip, 0.25f, 4, (Color){ 59, 130, 246, 255 });
+        // Header
+        const char* title = "SISTEMA COMPROMETIDO: INVASAO DE VIRUS";
+        int titleW = MeasureText(title, 20);
+        DrawText(title, SCREEN_WIDTH / 2 - titleW / 2, popupRect.y + 25, 20, COLOR_NEON_RED);
         
-        DrawText(promptText, tooltip.x + 20, tooltip.y + 12, 16, (Color){ 241, 245, 249, 255 });
-    } else {
-        // Draw level objective at the bottom center
-        const char* objText = currentObjective;
-        int textW = MeasureText(objText, 14);
-        Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 45, textW + 40, 30 };
-        DrawRectangleRounded(tooltip, 0.25f, 4, ColorAlpha((Color){ 15, 23, 42, 255 }, 0.85f));
-        DrawRectangleRoundedLines(tooltip, 0.25f, 4, (Color){ 71, 85, 105, 255 });
-        DrawText(objText, tooltip.x + 20, tooltip.y + 8, 14, (Color){ 226, 232, 240, 255 });
+        // Underline glow
+        DrawLineEx((Vector2){ popupRect.x + 40, popupRect.y + 55 }, (Vector2){ popupRect.x + 560, popupRect.y + 55 }, 2.0f, COLOR_NEON_RED);
+        
+        // Subtitle / Intro text
+        DrawText("Um virus de logica esta comprometendo a CPU central!", popupRect.x + 40, popupRect.y + 70, 15, COLOR_TEXT_MAIN);
+        DrawText("Para escapar, avance pelo labirinto resolvendo proposicoes logicas", popupRect.x + 40, popupRect.y + 90, 13, COLOR_TEXT_MUTED);
+        DrawText("nas portas bloqueadas antes que o virus te alcance.", popupRect.x + 40, popupRect.y + 108, 13, COLOR_TEXT_MUTED);
+        
+        // Logic explanation
+        DrawText("CONECTIVOS LOGICOS (PORTAS):", popupRect.x + 40, popupRect.y + 138, 14, COLOR_TEXT_CYBER);
+        
+        DrawText("~P (NOT)", popupRect.x + 50, popupRect.y + 163, 13, COLOR_NEON_CYAN);
+        DrawText("Inverte a verdade. (~V = F, ~F = V)", popupRect.x + 180, popupRect.y + 163, 13, COLOR_TEXT_MUTED);
+        
+        DrawText("P ^ Q (AND)", popupRect.x + 50, popupRect.y + 185, 13, COLOR_NEON_CYAN);
+        DrawText("Verdadeiro apenas se ambos forem Verdadeiros.", popupRect.x + 180, popupRect.y + 185, 13, COLOR_TEXT_MUTED);
+        
+        DrawText("P v Q (OR)", popupRect.x + 50, popupRect.y + 207, 13, COLOR_NEON_CYAN);
+        DrawText("Verdadeiro se pelo menos um for Verdadeiro.", popupRect.x + 180, popupRect.y + 207, 13, COLOR_TEXT_MUTED);
+        
+        DrawText("P [+] Q (XOR)", popupRect.x + 50, popupRect.y + 229, 13, COLOR_NEON_CYAN);
+        DrawText("Verdadeiro se os valores forem Diferentes.", popupRect.x + 180, popupRect.y + 229, 13, COLOR_TEXT_MUTED);
+        
+        DrawText("P -> Q (COND)", popupRect.x + 50, popupRect.y + 251, 13, COLOR_NEON_CYAN);
+        DrawText("Condicional: Falso apenas na implicacao V -> F.", popupRect.x + 180, popupRect.y + 251, 13, COLOR_TEXT_MUTED);
+        
+        DrawText("P <-> Q (BICOND)", popupRect.x + 50, popupRect.y + 273, 13, COLOR_NEON_CYAN);
+        DrawText("Bicondicional: Verdadeiro se ambos forem iguais.", popupRect.x + 180, popupRect.y + 273, 13, COLOR_TEXT_MUTED);
+        
+        // Controls / Warnings
+        DrawText("CONTROLES DE RESPOSTA:", popupRect.x + 40, popupRect.y + 305, 14, COLOR_NEON_GREEN);
+        DrawText("Pressione [V] para VERDADEIRO ou [F] para FALSO.", popupRect.x + 40, popupRect.y + 327, 13, COLOR_TEXT_MAIN);
+        DrawText("(Ou use o mouse para clicar na opcao desejada na tela)", popupRect.x + 40, popupRect.y + 347, 12, COLOR_TEXT_MUTED);
+        
+        // Button
+        Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, popupRect.y + 390, 200, 45 };
+        Vector2 mousePos = GetMousePosition();
+        bool hovered = CheckCollisionPointRec(mousePos, btnRect);
+        
+        DrawThemeButton(btnRect, "ENTENDIDO", 16, hovered, COLOR_NEON_GREEN);
+    }
+    
+    // Draw Proposition Overlay
+    if (isPropositionActive) {
+        // Darken background
+        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha(BLACK, 0.7f));
+        
+        // Glass container for proposition challenge
+        Rectangle challengeRect = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 160, 500, 300 };
+        
+        // Color theme based on the gate type
+        Color gateColor = COLOR_NEON_CYAN;
+        if (activeBarrierChallengeIdx >= 0 && activeBarrierChallengeIdx < activeNumBarriers) {
+            gateColor = activeBarriers[activeBarrierChallengeIdx].color;
+        }
+        
+        DrawThemeGlassPanel(challengeRect, 0.15f, gateColor);
+        
+        // Challenge title
+        const char* challengeTitle = "DECODIFICADOR DE BARREIRA";
+        if (activeBarrierChallengeIdx >= 0 && activeBarrierChallengeIdx < activeNumBarriers) {
+            challengeTitle = activeBarriers[activeBarrierChallengeIdx].label;
+        }
+        int titleW = MeasureText(challengeTitle, 20);
+        DrawText(challengeTitle, SCREEN_WIDTH / 2 - titleW / 2, challengeRect.y + 25, 20, gateColor);
+        
+        // Underline
+        DrawLineEx((Vector2){ challengeRect.x + 30, challengeRect.y + 55 }, (Vector2){ challengeRect.x + 470, challengeRect.y + 55 }, 1.5f, ColorAlpha(gateColor, 0.5f));
+        
+        // Question text - split into lines if contains newlines
+        char questionBuffer[256];
+        strcpy(questionBuffer, currentQuestion.questionText);
+        
+        char* line1 = strtok(questionBuffer, "\n");
+        char* line2 = strtok(NULL, "\n");
+        
+        if (line1) {
+            int line1W = MeasureText(line1, 16);
+            DrawText(line1, SCREEN_WIDTH / 2 - line1W / 2, challengeRect.y + 80, 16, COLOR_TEXT_MAIN);
+        }
+        if (line2) {
+            int line2W = MeasureText(line2, 16);
+            DrawText(line2, SCREEN_WIDTH / 2 - line2W / 2, challengeRect.y + 110, 16, COLOR_NEON_CYAN);
+        }
+        
+        if (errorCooldownTimer > 0.0f) {
+            // Draw a security lockout panel instead of option buttons
+            char penaltyText[128];
+            sprintf(penaltyText, "BLOQUEIO: AGUARDE %.1fs", errorCooldownTimer);
+            int penaltyW = MeasureText(penaltyText, 16);
+            DrawText(penaltyText, SCREEN_WIDTH / 2 - penaltyW / 2, challengeRect.y + 190, 16, COLOR_NEON_RED);
+            
+            const char* descText = "Tentativa incorreta detectada. Sistema temporariamente travado.";
+            int descTextW = MeasureText(descText, 12);
+            DrawText(descText, SCREEN_WIDTH / 2 - descTextW / 2, challengeRect.y + 225, 12, COLOR_TEXT_MUTED);
+        } else {
+            // Option buttons V (Verdadeiro) and F (Falso)
+            Rectangle btnV = { SCREEN_WIDTH / 2.0f - 140, challengeRect.y + 180, 120, 50 };
+            Rectangle btnF = { SCREEN_WIDTH / 2.0f + 20, challengeRect.y + 180, 120, 50 };
+            
+            Vector2 mousePos = GetMousePosition();
+            bool hoveredV = CheckCollisionPointRec(mousePos, btnV);
+            bool hoveredF = CheckCollisionPointRec(mousePos, btnF);
+            
+            DrawThemeButton(btnV, "VERDADEIRO (V)", 14, hoveredV, COLOR_NEON_GREEN);
+            DrawThemeButton(btnF, "FALSO (F)", 14, hoveredF, COLOR_NEON_RED);
+            
+            // Small note at the bottom
+            const char* noteText = "Decida se a proposicao acima e V ou F para liberar a porta.";
+            int noteW = MeasureText(noteText, 11);
+            DrawText(noteText, SCREEN_WIDTH / 2 - noteW / 2, challengeRect.y + 255, 11, COLOR_TEXT_MUTED);
+        }
+    }
+    
+    // Draw Game Over Overlay
+    if (gameOver) {
+        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha((Color){ 15, 10, 10, 255 }, 0.90f));
+        
+        Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
+        DrawThemeGlassPanel(card, 0.15f, COLOR_NEON_RED);
+        
+        const char* failText = "SISTEMA COMPROMETIDO!";
+        int failTextW = MeasureText(failText, 30);
+        DrawText(failText, SCREEN_WIDTH / 2 - failTextW / 2, card.y + 40, 30, COLOR_NEON_RED);
+        
+        const char* descText = "O Virus infectou a CPU e parou a execucao.";
+        int descTextW = MeasureText(descText, 16);
+        DrawText(descText, SCREEN_WIDTH / 2 - descTextW / 2, card.y + 90, 16, COLOR_TEXT_MUTED);
+        
+        char statsText[64];
+        sprintf(statsText, "Tempo de Sobrevivencia: %.1f s", gameTimer);
+        int statsTextW = MeasureText(statsText, 16);
+        DrawText(statsText, SCREEN_WIDTH / 2 - statsTextW / 2, card.y + 130, 16, COLOR_TEXT_MAIN);
+        
+        Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
+        
+        Vector2 mousePos = GetMousePosition();
+        bool hoveredRestart = CheckCollisionPointRec(mousePos, btnRestart);
+        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+        
+        DrawThemeButton(btnRestart, "REINICIAR (ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
+        DrawThemeButton(btnMenu, "MENU (ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
     
     // Draw Win Screen Overlay
@@ -1018,28 +1281,61 @@ void DrawGameplayScreen(void) {
         DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha((Color){ 9, 13, 22, 255 }, 0.85f));
         
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
-        DrawRectangleRounded(card, 0.15f, 4, (Color){ 17, 24, 39, 255 });
-        
         bool isLastLevel = (currentLevelIdx == MAX_LEVELS - 1);
-        Color borderCol = isLastLevel ? (Color){ 217, 70, 239, 255 } : (Color){ 16, 185, 129, 255 }; // Purple for final win, green for stage win
-        DrawRectangleRoundedLines(card, 0.15f, 4, borderCol);
+        Color borderCol = isLastLevel ? COLOR_NEON_MAGENTA : COLOR_NEON_GREEN;
         
-        const char* winText = isLastLevel ? "JOGO CONCLUÍDO!" : "FASE COMPLETADA!";
-        int winTextW = MeasureText(winText, 32);
-        DrawText(winText, SCREEN_WIDTH / 2 - winTextW / 2, card.y + 45, 32, isLastLevel ? (Color){ 217, 70, 239, 255 } : (Color){ 34, 197, 94, 255 });
+        DrawThemeGlassPanel(card, 0.15f, borderCol);
+        
+        const char* winText = isLastLevel ? "SISTEMA RESTAURADO!" : "FASE COMPLETADA!";
+        int winTextW = MeasureText(winText, 30);
+        DrawText(winText, SCREEN_WIDTH / 2 - winTextW / 2, card.y + 45, 30, borderCol);
         
         char statsText[64];
-        sprintf(statsText, "Tempo Final: %.2f segundos", gameTimer);
-        int statsTextW = MeasureText(statsText, 18);
-        DrawText(statsText, SCREEN_WIDTH / 2 - statsTextW / 2, card.y + 110, 18, (Color){ 226, 232, 240, 255 });
+        sprintf(statsText, "Tempo de Execucao: %.2f segundos", gameTimer);
+        int statsTextW = MeasureText(statsText, 16);
+        DrawText(statsText, SCREEN_WIDTH / 2 - statsTextW / 2, card.y + 110, 16, COLOR_TEXT_MAIN);
         
-        const char* playAgainText = isLastLevel ? "Pressione ESPAÇO para reiniciar o jogo" : "Pressione ESPAÇO para ir para a próxima fase";
-        int playAgainTextW = MeasureText(playAgainText, 16);
-        DrawText(playAgainText, SCREEN_WIDTH / 2 - playAgainTextW / 2, card.y + 180, 16, (Color){ 16, 185, 129, 255 });
+        Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
         
-        const char* exitText = "Pressione ESC para voltar ao Menu Principal";
-        int exitTextW = MeasureText(exitText, 16);
-        DrawText(exitText, SCREEN_WIDTH / 2 - exitTextW / 2, card.y + 220, 16, (Color){ 148, 163, 184, 255 });
+        Vector2 mousePos = GetMousePosition();
+        bool hoveredNext = CheckCollisionPointRec(mousePos, btnNext);
+        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+        
+        const char* btnNextLabel = isLastLevel ? "REINICIAR (ESP)" : "AVANCAR (ESP)";
+        DrawThemeButton(btnNext, btnNextLabel, 12, hoveredNext, COLOR_NEON_GREEN);
+        DrawThemeButton(btnMenu, "MENU (ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
+    }
+    
+    // Draw Pause Overlay
+    if (isGamePaused) {
+        // Darken background
+        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha(BLACK, 0.75f));
+        
+        // Card container
+        Rectangle card = { SCREEN_WIDTH / 2.0f - 200, SCREEN_HEIGHT / 2.0f - 120, 400, 240 };
+        DrawThemeGlassPanel(card, 0.15f, COLOR_NEON_CYAN);
+        
+        // Header
+        const char* pauseTitle = "SISTEMA PAUSADO";
+        int titleW = MeasureText(pauseTitle, 24);
+        DrawText(pauseTitle, SCREEN_WIDTH / 2 - titleW / 2, card.y + 30, 24, COLOR_NEON_CYAN);
+        
+        // Subtitle
+        const char* pauseDesc = "A execucao dos processos foi suspensa.";
+        int descW = MeasureText(pauseDesc, 14);
+        DrawText(pauseDesc, SCREEN_WIDTH / 2 - descW / 2, card.y + 65, 14, COLOR_TEXT_MUTED);
+        
+        // Buttons
+        Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
+        
+        Vector2 mousePos = GetMousePosition();
+        bool hoveredResume = CheckCollisionPointRec(mousePos, btnResume);
+        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+        
+        DrawThemeButton(btnResume, "RETOMAR (ESC)", 14, hoveredResume, COLOR_NEON_GREEN);
+        DrawThemeButton(btnMenu, "MENU (SAIR)", 14, hoveredMenu, COLOR_TEXT_MUTED);
     }
 }
 

@@ -11,6 +11,31 @@
 // Active screen state
 extern GameScreen currentScreen;
 
+// Fonts
+extern Font fontMain;
+extern Font fontBold;
+
+// Redefine standard Raylib text functions to use Inter font with high quality rendering
+static inline void DrawTextCustom(const char* text, int x, int y, int size, Color color) {
+    DrawTextEx(fontMain, text, (Vector2){ (float)x, (float)y }, (float)size, 1.0f, color);
+}
+static inline int MeasureTextCustom(const char* text, int size) {
+    return (int)MeasureTextEx(fontMain, text, (float)size, 1.0f).x;
+}
+static inline void DrawTextBoldCustom(const char* text, int x, int y, int size, Color color) {
+    DrawTextEx(fontBold, text, (Vector2){ (float)x, (float)y }, (float)size, 1.0f, color);
+}
+static inline int MeasureTextBoldCustom(const char* text, int size) {
+    return (int)MeasureTextEx(fontBold, text, (float)size, 1.0f).x;
+}
+
+#undef DrawText
+#undef MeasureText
+#define DrawText DrawTextCustom
+#define MeasureText MeasureTextCustom
+#define DrawTextBold DrawTextBoldCustom
+#define MeasureTextBold MeasureTextBoldCustom
+
 // Main game lifecycle functions
 void InitGame(void);
 void UpdateGame(void);

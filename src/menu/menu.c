@@ -35,6 +35,7 @@ void UpdateTitleScreen(void) {
     
     if (playHover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         currentScreen = SCREEN_GAMEPLAY;
+        InitGameplayScreen();
     }
     
     if (exitHover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
