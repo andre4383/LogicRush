@@ -4,7 +4,10 @@
 int main(void) {
     // Initialize Raylib window and OpenGL context
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Logic Rush — Desafios de Logica Proposicional");
-    
+
+    // Desabilita o ESC como tecla de fechar janela (cada tela gerencia o ESC)
+    SetExitKey(KEY_NULL);
+
     // Set rendering target frame rate
     SetTargetFPS(60);
     

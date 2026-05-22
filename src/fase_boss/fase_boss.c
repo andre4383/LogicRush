@@ -456,10 +456,28 @@ static void SpawnCube(void) {
         if (perm[i] == 0) newCorrect = i;  // options[0] é sempre o correto no struct
     }
 
-    // Posição x aleatória na área central
-    float xMin = 100.0f + CUBE_W / 2.0f;
-    float xMax = SCREEN_WIDTH - 100.0f - CUBE_W / 2.0f;
-    float xPos = xMin + (float)(RandRange(0, (int)(xMax - xMin)));
+    // ── Anti-sobreposição: escolhe X com maior distância de cubos ativos ─────────
+    float xMin  = 50.0f;
+    float xMax  = (float)SCREEN_WIDTH - CUBE_W - 50.0f;
+    float bestX = xMin + (float)(RandRange(0, (int)(xMax - xMin)));
+    float bestDist = 0.0f;
+
+    for (int attempt = 0; attempt < 6; attempt++) {
+        float cand = xMin + (float)(RandRange(0, (int)(xMax - xMin)));
+        float minDist = 9999.0f;
+        for (int ci = 0; ci < MAX_CUBES; ci++) {
+            if (!cubes[ci].isActive || ci == slot) continue;
+            float dx = fabsf(cand - cubes[ci].position.x);
+            if (dx < minDist) minDist = dx;
+        }
+        if (minDist > bestDist) { bestDist = minDist; bestX = cand; }
+    }
+
+    // ── Velocidade: percurso do topo (y=78) até a zona de cartas ─────────────────
+    float travelDist = (float)(SCREEN_HEIGHT - 155) - 78.0f;
+    float timeWindow = (boss.currentStage == 1) ? CUBE_TIME_S1 :
+                       (boss.currentStage == 2) ? CUBE_TIME_S2 : CUBE_TIME_S3;
+    float spd = (travelDist / timeWindow) * 1.12f;  // +12% para cruzar a linha
 
     // Popula o slot
     cubes[slot].prop          = p;
@@ -469,14 +487,13 @@ static void SpawnCube(void) {
     cubes[slot].answered      = 0;
     cubes[slot].playerChoice  = -1;
     cubes[slot].wasCorrect    = 0;
-    cubes[slot].position      = (Vector2){ xPos, 290.0f };
-    cubes[slot].fallSpeed     = 45.0f + boss.currentStage * 14.0f;
-    cubes[slot].totalTime     = (boss.currentStage == 1) ? CUBE_TIME_S1 :
-                                 (boss.currentStage == 2) ? CUBE_TIME_S2 : CUBE_TIME_S3;
-    cubes[slot].timeLeft      = cubes[slot].totalTime;
+    cubes[slot].position      = (Vector2){ bestX, 78.0f };  // nasce no topo
+    cubes[slot].fallSpeed     = spd;
+    cubes[slot].totalTime     = timeWindow;
+    cubes[slot].timeLeft      = timeWindow;
     cubes[slot].resultTimer   = 0.0f;
 
-    // Trigger arm throw animation on boss
+    // Trigger arm summon animation on boss
     boss.attackTimer = 0.55f;
 }
 
@@ -667,6 +684,30 @@ void UpdateBossScreen(void) {
 //                         DRAW — BOSS EQUAL
 // ==================================================================================
 
+// ── Helper: raio elétrico entre dois pontos ─────────────────────────────────────────
+static void DrawLightningBolt(Vector2 from, Vector2 to, float t, float seed,
+                               float thickness, Color col) {
+    float dx = to.x - from.x, dy = to.y - from.y;
+    float len = sqrtf(dx*dx + dy*dy);
+    if (len < 1.0f) return;
+    // vetor perpendicular normalizado
+    float px = -dy / len, py = dx / len;
+    int segs = 9;
+    Vector2 prev = from;
+    for (int i = 1; i <= segs; i++) {
+        float prog = (float)i / segs;
+        float bx   = from.x + dx * prog;
+        float by   = from.y + dy * prog;
+        // zigzag temporal com seed para múltiplos raios independentes
+        float amp  = len * 0.13f * sinf(prog * 3.14159f);
+        float zz   = sinf(t * 42.0f + i * 1.9f + seed * 3.7f) * amp;
+        Vector2 curr = { bx + px * zz, by + py * zz };
+        DrawLineEx(prev, curr, thickness, col);
+        prev = curr;
+    }
+    DrawLineEx(prev, to, thickness, col);
+}
+
 // ── Pixel-art robot character "Equal" ────────────────────────────────────────────
 static void DrawBossEqual(float t, int stage) {
     // State flags
@@ -765,12 +806,34 @@ static void DrawBossEqual(float t, int stage) {
 
     // ══ MOUTH ════════════════════════════════════════════════════════════════════
     float mY = cy + 22.0f;
-    if (!isAngry) {
-        // Small friendly smile
-        DrawLineEx((Vector2){ cx - 10, mY - 2 }, (Vector2){ cx,      mY + 4 }, 2.5f, mouthCol);
-        DrawLineEx((Vector2){ cx,      mY + 4 }, (Vector2){ cx + 10, mY - 2 }, 2.5f, mouthCol);
+    if (isAttacking) {
+        // Ataque: sobrancelhas raivosas + boca aberta gritando
+        float ap = boss.attackTimer / 0.55f;  // 1→0 durante o ataque
+        // Sobrancelhas carrancudas
+        DrawLineEx((Vector2){ cx - 28, cy - 22 }, (Vector2){ cx - 6,  cy - 15 }, 4.0f,
+                   (Color){ 230, 60, 60, 255 });
+        DrawLineEx((Vector2){ cx +  6, cy - 15 }, (Vector2){ cx + 28, cy - 22 }, 4.0f,
+                   (Color){ 230, 60, 60, 255 });
+        // Boca aberta (retângulo que cresce durante o arremesso)
+        float openH = 4.0f + (1.0f - ap) * 12.0f;
+        DrawRectangleRounded(
+            (Rectangle){ cx - 14, mY - 2, 28, openH }, 0.25f, 4,
+            (Color){ 180, 25, 25, 255 });
+        DrawRectangleRoundedLines(
+            (Rectangle){ cx - 14, mY - 2, 28, openH }, 0.25f, 4,
+            (Color){ 230, 60, 60, 255 });
+    } else if (!isAngry) {
+        // Idle: linha reta tensa — expressao neutra/intimidadora
+        // Sobrancelhas finas levemente franzidas
+        DrawLineEx((Vector2){ cx - 20, cy - 20 }, (Vector2){ cx -  6, cy - 17 }, 2.0f,
+                   ColorAlpha(eyeColor, 0.55f));
+        DrawLineEx((Vector2){ cx +  6, cy - 17 }, (Vector2){ cx + 20, cy - 20 }, 2.0f,
+                   ColorAlpha(eyeColor, 0.55f));
+        // Boca: linha fina e tensa (sem sorriso)
+        DrawLineEx((Vector2){ cx - 12, mY }, (Vector2){ cx + 12, mY }, 2.8f,
+                   ColorAlpha(mouthCol, 0.70f));
     } else {
-        // Jagged angry mouth (like right image)
+        // Raiva total: boca serrilhada (como na imagem direita)
         float jH = 8.0f;
         DrawLineEx((Vector2){ cx - 20, mY      }, (Vector2){ cx - 10, mY + jH }, 3.0f, mouthCol);
         DrawLineEx((Vector2){ cx - 10, mY + jH }, (Vector2){ cx,      mY      }, 3.0f, mouthCol);
@@ -803,25 +866,35 @@ static void DrawBossEqual(float t, int stage) {
     // ══ ARMS ════════════════════════════════════════════════════════════════════
     float armBaseY = torsoY + 16.0f;
 
-    // Left arm — gentle idle swing
-    float ls = sinf(t * 1.8f) * 12.0f;
+    // Braço esquerdo — pose de invocação: levanta em V durante ataque
+    float ls       = sinf(t * 1.8f) * 12.0f;
     Vector2 laBase = { cx - 40.0f, armBaseY };
-    Vector2 laTip  = { laBase.x - 16.0f, laBase.y + 36.0f + ls };
+    Vector2 laTip;
+    if (isAttacking) {
+        float prog  = 1.0f - (boss.attackTimer / 0.55f);
+        float raise = sinf(prog * 3.14159f * 0.85f);  // 0→1→0 suave
+        laTip = (Vector2){
+            laBase.x - 28.0f - 8.0f  * raise,   // abre para fora
+            laBase.y - 52.0f * raise              // ergue para cima
+        };
+    } else {
+        laTip = (Vector2){ laBase.x - 16.0f, laBase.y + 36.0f + ls };
+    }
     DrawLineEx(laBase, laTip, 14.0f, bodyGray);
     DrawLineEx(laBase, laTip, 10.0f, bodyWhite);
     DrawCircleV(laBase, 9.0f, suitMid);
     DrawCircleV(laTip,  7.0f, darkGray);
 
-    // Right arm — throw animation on attack, else idle swing
+    // Braço direito — pose de invocação: levanta em V durante ataque
     Vector2 raBase = { cx + 40.0f, armBaseY };
     Vector2 raTip;
     if (isAttacking) {
-        // Progress 0→1 as attack timer counts down
-        float prog = 1.0f - (boss.attackTimer / 0.55f);
-        // Extend arm downward-forward then retract
-        float ex = raBase.x + 50.0f * sinf(prog * 3.14159f);
-        float ey = raBase.y + 30.0f + 20.0f * sinf(prog * 3.14159f);
-        raTip = (Vector2){ ex, ey };
+        float prog  = 1.0f - (boss.attackTimer / 0.55f);
+        float raise = sinf(prog * 3.14159f * 0.85f);
+        raTip = (Vector2){
+            raBase.x + 28.0f + 8.0f  * raise,   // abre para fora
+            raBase.y - 52.0f * raise              // ergue para cima
+        };
     } else {
         float rs = -sinf(t * 1.8f) * 12.0f;
         raTip = (Vector2){ raBase.x + 16.0f, raBase.y + 36.0f + rs };
@@ -829,7 +902,43 @@ static void DrawBossEqual(float t, int stage) {
     DrawLineEx(raBase, raTip, 14.0f, bodyGray);
     DrawLineEx(raBase, raTip, 10.0f, bodyWhite);
     DrawCircleV(raBase, 9.0f, suitMid);
-    DrawCircleV(raTip,  7.0f, darkGray);
+    DrawCircleV(raTip,  7.0f, isAttacking ? ColorAlpha(ambGlow, 0.9f) : darkGray);
+
+    // ══ RAIOS ELÉTRICOS (só durante invocação) ══════════════════════════════════════
+    if (isAttacking) {
+        float prog  = 1.0f - (boss.attackTimer / 0.55f);
+        float raise = sinf(prog * 3.14159f * 0.85f);
+        if (raise > 0.15f) {
+            float alpha = raise;
+            Color bolt1 = ColorAlpha(ambGlow, alpha * 0.95f);
+            Color bolt2 = ColorAlpha(WHITE,   alpha * 0.55f);
+            Color bolt3 = ColorAlpha(ambGlow, alpha * 0.70f);
+
+            // 3 raios sobrepostos para efeito de intensidade
+            DrawLightningBolt(laTip, raTip, t,        0.0f, 2.8f, bolt1);
+            DrawLightningBolt(laTip, raTip, t + 0.18f, 1.0f, 1.6f, bolt2);
+            DrawLightningBolt(laTip, raTip, t + 0.37f, 2.0f, 1.4f, bolt3);
+
+            // Brilho nos punhos
+            float glowR = 10.0f + raise * 10.0f;
+            DrawCircle((int)laTip.x, (int)laTip.y, (int)(glowR + 6),
+                       ColorAlpha(ambGlow, alpha * 0.18f));
+            DrawCircle((int)laTip.x, (int)laTip.y, (int)glowR,
+                       ColorAlpha(ambGlow, alpha * 0.55f));
+            DrawCircle((int)raTip.x, (int)raTip.y, (int)(glowR + 6),
+                       ColorAlpha(ambGlow, alpha * 0.18f));
+            DrawCircle((int)raTip.x, (int)raTip.y, (int)glowR,
+                       ColorAlpha(ambGlow, alpha * 0.55f));
+
+            // Aura elétrica no centro (onde a proposição vai materializar)
+            float midX = (laTip.x + raTip.x) / 2.0f;
+            float midY = (laTip.y + raTip.y) / 2.0f - 20.0f * raise;
+            DrawCircle((int)midX, (int)midY, (int)(22 * raise),
+                       ColorAlpha(ambGlow, raise * 0.22f));
+            DrawCircleLines((int)midX, (int)midY, (int)(22 * raise),
+                            ColorAlpha(WHITE, raise * 0.45f));
+        }
+    }
 
     // ══ LEGS ════════════════════════════════════════════════════════════════════
     float legY = torsoY + 60.0f;
@@ -888,8 +997,10 @@ static void DrawLogicCube(LogicCube *cube, int isSelected, float t) {
     // Expressão lógica
     int exprSize = 24;
     int exprW = MeasureText(cube->prop->expression, exprSize);
+    // Estágios 1-2: centralizado verticalmente (sem prefixo). Estágio 3: topo.
+    int exprY = (cube->prop->stage == 3) ? (int)(y + 10) : (int)(y + CUBE_H/2 - 14);
     DrawText(cube->prop->expression,
-             (int)(x + CUBE_W/2 - exprW/2), (int)(y + 10),
+             (int)(x + CUBE_W/2 - exprW/2), exprY,
              exprSize, cube->answered ? WHITE : accent);
 
     if (cube->answered) {
@@ -901,13 +1012,15 @@ static void DrawLogicCube(LogicCube *cube, int isSelected, float t) {
         return;
     }
 
-    // Prefixo (tipo de questão)
-    int pfxSize = 11;
-    int pfxW = MeasureText(cube->prop->prefix, pfxSize);
-    if (pfxW > CUBE_W - 10) pfxSize = 10;
-    pfxW = MeasureText(cube->prop->prefix, pfxSize);
-    DrawText(cube->prop->prefix, (int)(x+CUBE_W/2-pfxW/2), (int)(y+44),
-             pfxSize, COLOR_TEXT_MUTED);
+    // Prefixo: apenas no estágio 3 (1 e 2 usam o painel de variáveis fixo)
+    if (cube->prop->stage == 3) {
+        int pfxSize = 11;
+        int pfxW = MeasureText(cube->prop->prefix, pfxSize);
+        if (pfxW > CUBE_W - 10) pfxSize = 10;
+        pfxW = MeasureText(cube->prop->prefix, pfxSize);
+        DrawText(cube->prop->prefix, (int)(x+CUBE_W/2-pfxW/2), (int)(y+46),
+                 pfxSize, ColorAlpha(COLOR_NEON_PURPLE, 0.80f));
+    }
 
     // Barra de tempo
     float ratio = cube->timeLeft / cube->totalTime;
@@ -918,6 +1031,47 @@ static void DrawLogicCube(LogicCube *cube, int isSelected, float t) {
                   ColorAlpha(COLOR_PANEL_BORDER, 0.8f));
     DrawRectangle((int)(x+10), (int)(y+CUBE_H-11), (int)((CUBE_W-20)*ratio), 6,
                   barCol);
+
+    // ══ EFEITO DE CHOQUE NO SPAWN (primeiros ~0.7s de vida) ═══════════════════
+    if (ratio > 0.86f) {
+        float sa  = (ratio - 0.86f) / 0.14f;  // 1→0 enquanto o choque some
+        float flk = 0.5f + sinf((float)GetTime() * 55.0f) * 0.5f;  // flicker rápido
+        Color eCol  = ColorAlpha(COLOR_NEON_CYAN, sa * flk);
+        Color eColW = ColorAlpha(WHITE,           sa * flk * 0.45f);
+
+        // Bordas elétricas externas
+        DrawRectangleRoundedLines(
+            (Rectangle){ x - 5, y - 5, CUBE_W + 10, CUBE_H + 10 },
+            0.14f, 6, eCol);
+        DrawRectangleRoundedLines(
+            (Rectangle){ x - 2, y - 2, CUBE_W + 4, CUBE_H + 4 },
+            0.14f, 6, eColW);
+
+        // Farost nos 4 cantos
+        float cx2 = (float)GetTime();
+        Vector2 corners[4] = {
+            { x,         y },
+            { x + CUBE_W, y },
+            { x,         y + CUBE_H },
+            { x + CUBE_W, y + CUBE_H }
+        };
+        for (int c = 0; c < 4; c++) {
+            float ang = cx2 * 90.0f + c * 90.0f;
+            float spkLen = 8.0f + sa * 10.0f;
+            DrawLineEx(corners[c],
+                       (Vector2){ corners[c].x + cosf(ang * DEG2RAD) * spkLen,
+                                  corners[c].y + sinf(ang * DEG2RAD) * spkLen },
+                       2.0f, ColorAlpha(COLOR_NEON_CYAN, sa * 0.9f));
+            DrawCircle((int)corners[c].x, (int)corners[c].y,
+                       (int)(5 * sa * flk), ColorAlpha(WHITE, sa * 0.6f));
+        }
+
+        // Raio elétrico horizontal no meio do cubo
+        Vector2 midL = { x,         y + CUBE_H / 2.0f };
+        Vector2 midR = { x + CUBE_W, y + CUBE_H / 2.0f };
+        DrawLightningBolt(midL, midR, (float)GetTime(), 3.0f, 1.5f,
+                          ColorAlpha(COLOR_NEON_CYAN, sa * 0.70f));
+    }
 }
 
 // ==================================================================================
@@ -1160,6 +1314,58 @@ static void DrawBossHPBar(void) {
 }
 
 // ==================================================================================
+//                    DRAW — PAINEL DE VARIÁVEIS (legenda fixa, topo-esquerdo)
+// ==================================================================================
+
+static void DrawParamLegend(float t) {
+    Rectangle panel = { 15.0f, 52.0f, 192.0f, 78.0f };
+
+    // Fundo glass + borda animada
+    DrawRectangleRounded(panel, 0.16f, 6, ColorAlpha(COLOR_PANEL_BG, 0.92f));
+    DrawRectangleRoundedLines(panel, 0.16f, 6,
+        ColorAlpha(COLOR_NEON_CYAN, 0.26f + sinf(t * 3.0f) * 0.10f));
+    // Linha de acento no topo
+    DrawLineEx(
+        (Vector2){ panel.x + 8,               panel.y + 1.0f },
+        (Vector2){ panel.x + panel.width - 8,  panel.y + 1.0f },
+        1.5f, ColorAlpha(COLOR_NEON_CYAN, 0.55f));
+
+    // Título
+    DrawText("VARIAVEIS:", (int)(panel.x + 10), (int)(panel.y + 7), 11,
+             ColorAlpha(COLOR_TEXT_MUTED, 0.68f));
+
+    // ── P = Verdadeiro ───────────────────────────────────────────────────────────
+    float ry1 = panel.y + 26.0f;
+    DrawText("P", (int)(panel.x + 10), (int)ry1, 20, COLOR_NEON_CYAN);
+    DrawText("=", (int)(panel.x + 28), (int)(ry1 + 2), 14,
+             ColorAlpha(COLOR_TEXT_MUTED, 0.60f));
+    DrawRectangleRounded(
+        (Rectangle){ panel.x + 44, ry1, 136.0f, 21.0f }, 0.30f, 4,
+        ColorAlpha(COLOR_NEON_GREEN, 0.14f));
+    DrawRectangleRoundedLines(
+        (Rectangle){ panel.x + 44, ry1, 136.0f, 21.0f }, 0.30f, 4,
+        ColorAlpha(COLOR_NEON_GREEN, 0.45f));
+    DrawText("Verdadeiro", (int)(panel.x + 50), (int)(ry1 + 5), 12, COLOR_NEON_GREEN);
+    DrawText("(V)",  (int)(panel.x + 156), (int)(ry1 + 5), 12,
+             ColorAlpha(COLOR_NEON_GREEN, 0.72f));
+
+    // ── Q = Falso ─────────────────────────────────────────────────────────────────
+    float ry2 = panel.y + 52.0f;
+    DrawText("Q", (int)(panel.x + 10), (int)ry2, 20, COLOR_NEON_CYAN);
+    DrawText("=", (int)(panel.x + 28), (int)(ry2 + 2), 14,
+             ColorAlpha(COLOR_TEXT_MUTED, 0.60f));
+    DrawRectangleRounded(
+        (Rectangle){ panel.x + 44, ry2, 136.0f, 21.0f }, 0.30f, 4,
+        ColorAlpha(COLOR_NEON_RED, 0.14f));
+    DrawRectangleRoundedLines(
+        (Rectangle){ panel.x + 44, ry2, 136.0f, 21.0f }, 0.30f, 4,
+        ColorAlpha(COLOR_NEON_RED, 0.45f));
+    DrawText("Falso",  (int)(panel.x + 50), (int)(ry2 + 5), 12, COLOR_NEON_RED);
+    DrawText("(F)",   (int)(panel.x + 156), (int)(ry2 + 5), 12,
+             ColorAlpha(COLOR_NEON_RED, 0.72f));
+}
+
+// ==================================================================================
 //                              DRAW PRINCIPAL
 // ==================================================================================
 
@@ -1182,6 +1388,7 @@ void DrawBossScreen(void) {
                       ColorAlpha(COLOR_NEON_RED, 0.15f));
 
     // ── Elementos do jogo ────────────────────────────────────────────────────────
+    DrawParamLegend(t);          // Painel de variáveis P/Q (canto superior esquerdo)
     DrawBossEqual(t, boss.currentStage);
 
     for (int i = 0; i < MAX_CUBES; i++) {
