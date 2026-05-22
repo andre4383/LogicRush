@@ -29,6 +29,9 @@
 #define COLOR_TEXT_MUTED        (Color){ 148, 163, 184, 255 }  // Muted gray-slate
 #define COLOR_TEXT_CYBER        (Color){ 96, 165, 250, 255 }   // Tech highlight blue
 
+// Layout / Grid Constants
+#define CELL_SIZE               40                             // Size of grid cell in pixels
+
 // ==================================================================================
 //                              THEME DRAWING HELPERS
 // ==================================================================================

@@ -44,6 +44,7 @@ void InitGame(void) {
     // Initialise all screens
     InitTitleScreen();
     InitGameplayScreen();
+    InitBossScreen();
 }
 
 void UpdateGame(void) {
@@ -54,6 +55,9 @@ void UpdateGame(void) {
         case SCREEN_GAMEPLAY:
             UpdateGameplayScreen();
             break;
+        case SCREEN_BOSS:
+            UpdateBossScreen();
+            break;
         default:
             break;
     }
@@ -61,8 +65,7 @@ void UpdateGame(void) {
 
 void DrawGame(void) {
     BeginDrawing();
-    
-    // Draw the active screen
+
     switch (currentScreen) {
         case SCREEN_TITLE:
             DrawTitleScreen();
@@ -70,19 +73,22 @@ void DrawGame(void) {
         case SCREEN_GAMEPLAY:
             DrawGameplayScreen();
             break;
+        case SCREEN_BOSS:
+            DrawBossScreen();
+            break;
         default:
             ClearBackground(DARKGRAY);
             DrawText("Tela desconhecida!", 20, 20, 20, RED);
             break;
     }
-    
+
     EndDrawing();
 }
 
 void UnloadGame(void) {
-    // Clean up assets of all screens
     UnloadTitleScreen();
     UnloadGameplayScreen();
+    UnloadBossScreen();
     
     // Unload global fonts
     UnloadFont(fontMain);
