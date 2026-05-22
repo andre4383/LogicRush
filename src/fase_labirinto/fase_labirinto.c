@@ -54,7 +54,6 @@ static bool isPropositionActive = false;
 static int activeBarrierChallengeIdx = -1;
 static int lastInteractedBarrierIdx = -1;
 static bool gameOver = false;
-static bool isGamePaused = false;
 static float errorCooldownTimer = 0.0f;
 
 typedef struct {
@@ -575,7 +574,6 @@ static void ResetLevel(void) {
     gameWon = false;
     gameOver = false;
     isPropositionActive = false;
-    isGamePaused = false;
     errorCooldownTimer = 0.0f;
     activeBarrierChallengeIdx = -1;
     lastInteractedBarrierIdx = -1;
@@ -654,14 +652,27 @@ static void UpdateEnemy(float dt) {
 }
 
 void UpdateGameplayScreen(void) {
+    if (phaseBannerTimer > 0.0f) {
+        UpdatePhaseBanner(GetFrameTime());
+        return;
+    }
+    
+    if (!gameWon && !gameOver) {
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            gamePaused = true;
+            return;
+        }
+    }
+    
     if (gameWon) {
         if (IsKeyPressed(KEY_SPACE)) {
             if (currentLevelIdx < MAX_LEVELS - 1) {
                 currentLevelIdx++;
                 ResetLevel();
             } else {
-                currentLevelIdx = 0;
-                ResetLevel();
+                currentScreen = SCREEN_BOSS;
+                InitBossScreen();
+                StartPhaseBanner("FASE 3", "CONFRONTANDO EQUAL (BOSS FIGHT)");
             }
             return;
         }
@@ -681,8 +692,9 @@ void UpdateGameplayScreen(void) {
                     currentLevelIdx++;
                     ResetLevel();
                 } else {
-                    currentLevelIdx = 0;
-                    ResetLevel();
+                    currentScreen = SCREEN_BOSS;
+                    InitBossScreen();
+                    StartPhaseBanner("FASE 3", "CONFRONTANDO EQUAL (BOSS FIGHT)");
                 }
                 return;
             }
@@ -733,11 +745,6 @@ void UpdateGameplayScreen(void) {
         if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             isIntroActive = false;
         }
-        
-        // Quick exit to menu
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            currentScreen = SCREEN_TITLE;
-        }
         return;
     }
     
@@ -786,13 +793,6 @@ void UpdateGameplayScreen(void) {
                 isPropositionActive = false;
                 activeBarrierChallengeIdx = -1;
             }
-            
-            // Quick exit to menu
-            if (IsKeyPressed(KEY_ESCAPE)) {
-                currentScreen = SCREEN_TITLE;
-                errorCooldownTimer = 0.0f;
-                lastInteractedBarrierIdx = -1;
-            }
             return;
         }
 
@@ -821,6 +821,7 @@ void UpdateGameplayScreen(void) {
                 if (activeBarrierChallengeIdx >= 0 && activeBarrierChallengeIdx < activeNumBarriers) {
                     activeBarriers[activeBarrierChallengeIdx].open = true;
                 }
+                globalScore += 150;
                 isPropositionActive = false;
                 activeBarrierChallengeIdx = -1;
                 lastInteractedBarrierIdx = -1;
@@ -829,46 +830,17 @@ void UpdateGameplayScreen(void) {
                 errorCooldownTimer = 5.0f;
             }
         }
-        
-        // Quick exit to menu
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            currentScreen = SCREEN_TITLE;
-            errorCooldownTimer = 0.0f;
-            lastInteractedBarrierIdx = -1;
-        }
         return;
     }
     
-    if (isGamePaused) {
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            isGamePaused = false;
-            return;
-        }
-        
-        // Mouse interaction for Pause Screen
-        Rectangle card = { SCREEN_WIDTH / 2.0f - 200, SCREEN_HEIGHT / 2.0f - 120, 400, 240 };
-        Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
-        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
-        
-        Vector2 mousePos = GetMousePosition();
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (CheckCollisionPointRec(mousePos, btnResume)) {
-                isGamePaused = false;
-                return;
-            }
-            if (CheckCollisionPointRec(mousePos, btnMenu)) {
-                currentScreen = SCREEN_TITLE;
-                return;
-            }
-        }
-        return;
-    }
+
     
     // Normal Gameplay loop
     float dt = GetFrameTime();
     
     // Update timer
     gameTimer += dt;
+    globalTimer += dt;
     
     // Pulsate target goal and elements
     globalPulse += 0.03f * globalPulseDir;
@@ -944,13 +916,11 @@ void UpdateGameplayScreen(void) {
     int pRow = (int)(playerPos.y / CELL_SIZE);
     if (pRow >= 0 && pRow < ROWS && pCol >= 0 && pCol < COLS) {
         if (activeMaze[pRow][pCol] == 3) {
-            gameWon = true;
+            if (!gameWon) {
+                gameWon = true;
+                globalScore += 300;
+            }
         }
-    }
-    
-    // Pause the game when ESC is pressed
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        isGamePaused = true;
     }
 }
 
@@ -1098,17 +1068,7 @@ void DrawGameplayScreen(void) {
     DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
     
     // Floating Glassmorphic HUD overlay top panel
-    DrawThemeGlassPanel((Rectangle){ 15, 10, SCREEN_WIDTH - 30, CELL_SIZE }, 0.20f, ColorAlpha(COLOR_GRID_LINE, 0.25f));
-    
-    char hudTitle[128];
-    sprintf(hudTitle, "LOGIC RUSH: %s", currentLevelName);
-    DrawText(hudTitle, 35, 20, 20, COLOR_TEXT_CYBER);
-    
-    char timerText[32];
-    sprintf(timerText, "Tempo: %.1f s", gameTimer);
-    DrawText(timerText, SCREEN_WIDTH - 220, 20, 20, COLOR_TEXT_MAIN);
-    
-    DrawText("ESC: Voltar ao Menu | WASD/Setas: Mover", SCREEN_WIDTH / 2 - 180, 23, 14, COLOR_TEXT_MUTED);
+    DrawUnifiedHUD("FASE 2: LABIRINTO", currentLevelName, "ESC: Pausar | WASD/Setas: Mover");
     
     // Draw level objective at the bottom center
     const char* objText = currentObjective;
@@ -1261,7 +1221,7 @@ void DrawGameplayScreen(void) {
         DrawText(descText, SCREEN_WIDTH / 2 - descTextW / 2, card.y + 90, 16, COLOR_TEXT_MUTED);
         
         char statsText[64];
-        sprintf(statsText, "Tempo de Sobrevivencia: %.1f s", gameTimer);
+        sprintf(statsText, "Tempo de Sobrevivencia: %.1f s", globalTimer);
         int statsTextW = MeasureText(statsText, 16);
         DrawText(statsText, SCREEN_WIDTH / 2 - statsTextW / 2, card.y + 130, 16, COLOR_TEXT_MAIN);
         
@@ -1291,7 +1251,7 @@ void DrawGameplayScreen(void) {
         DrawText(winText, SCREEN_WIDTH / 2 - winTextW / 2, card.y + 45, 30, borderCol);
         
         char statsText[64];
-        sprintf(statsText, "Tempo de Execucao: %.2f segundos", gameTimer);
+        sprintf(statsText, "Tempo de Execucao: %.2f segundos", globalTimer);
         int statsTextW = MeasureText(statsText, 16);
         DrawText(statsText, SCREEN_WIDTH / 2 - statsTextW / 2, card.y + 110, 16, COLOR_TEXT_MAIN);
         
@@ -1302,41 +1262,12 @@ void DrawGameplayScreen(void) {
         bool hoveredNext = CheckCollisionPointRec(mousePos, btnNext);
         bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
         
-        const char* btnNextLabel = isLastLevel ? "REINICIAR (ESP)" : "AVANCAR (ESP)";
+        const char* btnNextLabel = isLastLevel ? "ENFRENTAR BOSS (ESP)" : "AVANCAR (ESP)";
         DrawThemeButton(btnNext, btnNextLabel, 12, hoveredNext, COLOR_NEON_GREEN);
         DrawThemeButton(btnMenu, "MENU (ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
     
-    // Draw Pause Overlay
-    if (isGamePaused) {
-        // Darken background
-        DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha(BLACK, 0.75f));
-        
-        // Card container
-        Rectangle card = { SCREEN_WIDTH / 2.0f - 200, SCREEN_HEIGHT / 2.0f - 120, 400, 240 };
-        DrawThemeGlassPanel(card, 0.15f, COLOR_NEON_CYAN);
-        
-        // Header
-        const char* pauseTitle = "SISTEMA PAUSADO";
-        int titleW = MeasureText(pauseTitle, 24);
-        DrawText(pauseTitle, SCREEN_WIDTH / 2 - titleW / 2, card.y + 30, 24, COLOR_NEON_CYAN);
-        
-        // Subtitle
-        const char* pauseDesc = "A execucao dos processos foi suspensa.";
-        int descW = MeasureText(pauseDesc, 14);
-        DrawText(pauseDesc, SCREEN_WIDTH / 2 - descW / 2, card.y + 65, 14, COLOR_TEXT_MUTED);
-        
-        // Buttons
-        Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
-        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
-        
-        Vector2 mousePos = GetMousePosition();
-        bool hoveredResume = CheckCollisionPointRec(mousePos, btnResume);
-        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
-        
-        DrawThemeButton(btnResume, "RETOMAR (ESC)", 14, hoveredResume, COLOR_NEON_GREEN);
-        DrawThemeButton(btnMenu, "MENU (SAIR)", 14, hoveredMenu, COLOR_TEXT_MUTED);
-    }
+    DrawPhaseBanner();
 }
 
 void UnloadGameplayScreen(void) {

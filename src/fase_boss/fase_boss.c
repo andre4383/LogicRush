@@ -369,7 +369,6 @@ static void UpdateCardLayout(int numCards) {
 void InitBossScreen(void) {
     boss.bossHP        = BOSS_MAX_HP;
     boss.playerHP      = PLAYER_MAX_HP;
-    boss.score         = 0;
     boss.currentStage  = 1;
     boss.spawnTimer    = 1.5f;
     boss.spawnCooldown = SPAWN_RATE_S1;
@@ -515,7 +514,7 @@ static void ApplyAnswer(int cubeIdx, int chosenOption) {
 
     if (correct) {
         boss.bossHP -= BOSS_DAMAGE;
-        boss.score  += 100 * boss.currentStage;
+        globalScore += 100 * boss.currentStage;
         // Shield block animation at the cube's current position
         boss.shieldTimer = 0.85f;
         boss.shieldPos   = cubes[cubeIdx].position;
@@ -565,7 +564,23 @@ static void ApplyTimeout(int cubeIdx) {
 void UpdateBossScreen(void) {
     float dt = GetFrameTime();
 
-    if (IsKeyPressed(KEY_ESCAPE)) { currentScreen = SCREEN_TITLE; return; }
+    if (phaseBannerTimer > 0.0f) {
+        UpdatePhaseBanner(dt);
+        return;
+    }
+
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        if (boss.phase != BPHASE_VICTORY && boss.phase != BPHASE_DEFEAT) {
+            gamePaused = true;
+        } else {
+            currentScreen = SCREEN_TITLE;
+        }
+        return;
+    }
+
+    if (boss.phase == BPHASE_FIGHTING || boss.phase == BPHASE_BOSS_HIT || boss.phase == BPHASE_PLAYER_HIT) {
+        globalTimer += dt;
+    }
 
     // ── INTRO ────────────────────────────────────────────────────────────────────
     if (boss.phase == BPHASE_INTRO) {
@@ -1401,19 +1416,10 @@ void DrawBossScreen(void) {
     DrawAnswerCards(t);
 
     // ── HUD Topo ─────────────────────────────────────────────────────────────────
-    Rectangle topHud = { 15, 10, SCREEN_WIDTH - 30, CELL_SIZE };
-    DrawThemeGlassPanel(topHud, 0.20f, ColorAlpha(COLOR_GRID_LINE, 0.25f));
-    DrawText("LOGIC RUSH", 35, 20, 20, COLOR_TEXT_CYBER);
-
     const char *stgStr = (boss.currentStage == 1) ? "ESTAGIO 1: INICIANTE" :
                           (boss.currentStage == 2) ? "ESTAGIO 2: AVANCADO"  :
                                                      "ESTAGIO 3: CRITICO!";
-    Color stgCol = (boss.currentStage == 1) ? COLOR_NEON_GREEN :
-                   (boss.currentStage == 2) ? COLOR_NEON_GOLD  : COLOR_NEON_RED;
-    int stgW = MeasureText(stgStr, 16);
-    DrawText(stgStr, SCREEN_WIDTH/2 - stgW/2, 22, 16, stgCol);
-    DrawText(TextFormat("SCORE: %d", boss.score), SCREEN_WIDTH-190, 22, 16,
-             COLOR_TEXT_MUTED);
+    DrawUnifiedHUD("FASE 3: BOSS FIGHT", stgStr, "Clique com o MOUSE nas respostas para rebater os ataques");
 
     // ── HUD Inferior ─────────────────────────────────────────────────────────────
     Rectangle botHud = { 15, SCREEN_HEIGHT - 35, SCREEN_WIDTH - 30, 28 };
@@ -1450,7 +1456,7 @@ void DrawBossScreen(void) {
         const char *ws = "Os sistemas foram restaurados com sucesso!";
         DrawText(ws, SCREEN_WIDTH/2-MeasureText(ws,20)/2, SCREEN_HEIGHT/2, 20,
                  COLOR_TEXT_MUTED);
-        const char *sc = TextFormat("PONTUACAO FINAL: %d", boss.score);
+        const char *sc = TextFormat("PONTUACAO FINAL: %d", globalScore);
         DrawText(sc, SCREEN_WIDTH/2-MeasureText(sc,26)/2, SCREEN_HEIGHT/2+36, 26,
                  COLOR_NEON_GOLD);
         if (sinf(t*3.0f) > 0.0f) {
@@ -1471,7 +1477,8 @@ void DrawBossScreen(void) {
         if (sinf(t*3.0f) > 0.0f) {
             const char *rt = "Pressione ENTER para tentar novamente";
             DrawText(rt, SCREEN_WIDTH/2-MeasureText(rt,18)/2,
-                     SCREEN_HEIGHT/2+50, 18, COLOR_TEXT_MUTED);
+                      SCREEN_HEIGHT/2+50, 18, COLOR_TEXT_MUTED);
         }
     }
+    DrawPhaseBanner();
 }
