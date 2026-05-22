@@ -5,6 +5,7 @@
 typedef enum GameScreen {
     SCREEN_LOGO = 0,
     SCREEN_TITLE,
+    SCREEN_QUIZ,       // Fase 1: Quiz (Memory)
     SCREEN_GAMEPLAY,   // Fase 2: Labirinto
     SCREEN_BOSS,       // Fase 3: Boss Fight (Meeting Equal)
     SCREEN_ENDING

@@ -31,6 +31,7 @@ endif
 # ── Fontes e Objetos ─────────────────────────────────────────────────────────────
 SRC = $(wildcard src/core/*.c)           \
       $(wildcard src/menu/*.c)           \
+      $(wildcard src/fase_quiz/*.c)       \
       $(wildcard src/fase_labirinto/*.c) \
       $(wildcard src/fase_boss/*.c)
 
