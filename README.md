@@ -20,6 +20,34 @@ The experience is inspired by high-energy "party games" and features a cycling d
 ### Meeting Equal (Boss Fight):
 - Face the AI directly as she hurls complex logical expressions at you, Simplify these expressions using cubes to repair the data and reflect the damage back at her
 
+## Como Rodar
+
+### macOS
+```bash
+# Instalar Raylib (uma vez)
+brew install raylib
+
+# Compilar e executar
+make run
+```
+
+### Windows
+**Pré-requisitos** (instalar uma vez):
+1. [w64devkit](https://github.com/skeeto/w64devkit/releases) — extrair em `C:\raylib\w64devkit`
+2. [Raylib](https://github.com/raysan5/raylib/releases) — extrair em `C:\raylib\raylib`
+
+**Executar** (via Git Bash, CMD ou terminal do w64devkit):
+```bat
+make run
+```
+
+**Ou** duplo-clique em `run.bat` se o executável já estiver compilado.
+
+**Raylib em outro diretório?** Override via variável de ambiente:
+```bat
+set RAYLIB_PATH=D:\libs\raylib && make run
+```
+
 ## The Team
 ### PROGRAMMERS 
 - Afonso Araújo 

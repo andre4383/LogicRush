@@ -2,9 +2,17 @@ CFLAGS = -Wall -Wextra -std=c99
 
 # ── Configuração por Sistema Operacional ─────────────────────────────────────────
 ifeq ($(OS), Windows_NT)
-    CC      = C:/raylib/w64devkit/bin/gcc.exe
-    CFLAGS += -IC:/raylib/raylib/src
-    LDFLAGS = -LC:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
+    RAYLIB_PATH ?= C:/raylib/raylib
+    W64DEV_GCC   = C:/raylib/w64devkit/bin/gcc.exe
+
+    ifeq ($(wildcard $(W64DEV_GCC)),$(W64DEV_GCC))
+        CC = $(W64DEV_GCC)
+    else
+        CC = gcc
+    endif
+
+    CFLAGS += -I$(RAYLIB_PATH)/src
+    LDFLAGS = -L$(RAYLIB_PATH)/src -lraylib -lopengl32 -lgdi32 -lwinmm
     TARGET  = logic_rush.exe
     RUN_CMD = $(TARGET)
 else
