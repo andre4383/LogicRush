@@ -2,17 +2,45 @@ CFLAGS = -Wall -Wextra -std=c99
 
 # ── Configuração por Sistema Operacional ─────────────────────────────────────────
 ifeq ($(OS), Windows_NT)
-    RAYLIB_PATH ?= C:/raylib/raylib
-    W64DEV_GCC   = C:/raylib/w64devkit/bin/gcc.exe
-
+    W64DEV_GCC = C:/raylib/w64devkit/bin/gcc.exe
     ifeq ($(wildcard $(W64DEV_GCC)),$(W64DEV_GCC))
         CC = $(W64DEV_GCC)
     else
         CC = gcc
     endif
 
-    CFLAGS += -I$(RAYLIB_PATH)/src
-    LDFLAGS = -L$(RAYLIB_PATH)/src -lraylib -lopengl32 -lgdi32 -lwinmm
+    # ── Auto-detect Raylib ────────────────────────────────────────────────────────
+    # Ordem: pkg-config → paths comuns → RAYLIB_PATH manual → erro
+    _PKGCONFIG_OK := $(shell pkg-config --exists raylib 2>/dev/null && echo yes || echo no)
+
+    ifeq ($(_PKGCONFIG_OK),yes)
+        CFLAGS += $(shell pkg-config --cflags raylib 2>/dev/null)
+        LDFLAGS  = $(shell pkg-config --libs raylib 2>/dev/null)
+    else
+        _RL_SEARCH = \
+            C:/raylib/raylib/src \
+            C:/msys64/mingw64/include \
+            C:/msys2/mingw64/include \
+            C:/msys64/ucrt64/include \
+            C:/msys2/ucrt64/include \
+            C:/mingw64/include
+        ifdef RAYLIB_PATH
+            _RL_SEARCH += $(RAYLIB_PATH)/src $(RAYLIB_PATH)/include $(RAYLIB_PATH)
+        endif
+
+        _RL_INC := $(firstword $(foreach d,$(_RL_SEARCH),$(if $(wildcard $(d)/raylib.h),$(d),)))
+
+        ifeq ($(_RL_INC),)
+            $(error Raylib nao encontrado. Instale via MSYS2: pacman -S mingw-w64-x86_64-raylib  OU  defina: set RAYLIB_PATH=<caminho>)
+        endif
+
+        # Deriva lib dir: paths /include -> /lib, outros (ex: /src) ficam iguais
+        _RL_LIB := $(if $(filter %/include,$(_RL_INC)),$(patsubst %/include,%/lib,$(_RL_INC)),$(_RL_INC))
+
+        CFLAGS  += -I$(_RL_INC)
+        LDFLAGS  = -L$(_RL_LIB) -lraylib -lopengl32 -lgdi32 -lwinmm
+    endif
+
     TARGET  = logic_rush.exe
     RUN_CMD = $(TARGET)
 else
