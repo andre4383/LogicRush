@@ -10,15 +10,15 @@
 static int lastWinW = 0, lastWinH = 0;
 
 // Pre-transform mouse so GetMousePosition() returns virtual (1280x720) coords.
-// Uses logical pixels (GetScreenWidth) — correct because Raylib reports mouse
-// in logical coords regardless of HiDPI.
+// With FLAG_WINDOW_HIGHDPI, Raylib reports mouse in physical (framebuffer) pixels,
+// so divide by GetRenderWidth/Height to stay consistent with rlScalef rendering.
 static void UpdateMouseTransform(void) {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
     if (sw == lastWinW && sh == lastWinH) return;
     lastWinW = sw; lastWinH = sh;
 
-    SetMouseScale((float)VIRTUAL_W / (float)sw, (float)VIRTUAL_H / (float)sh);
+    SetMouseScale((float)VIRTUAL_W / (float)GetRenderWidth(), (float)VIRTUAL_H / (float)GetRenderHeight());
     SetMouseOffset(0, 0);
 }
 
