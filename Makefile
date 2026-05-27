@@ -42,7 +42,7 @@ ifeq ($(OS), Windows_NT)
     endif
 
     TARGET  = logic_rush.exe
-    RUN_CMD = $(TARGET)
+    RUN_CMD = ./$(TARGET)
 else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S), Darwin)

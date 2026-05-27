@@ -86,8 +86,9 @@ void StartPhaseBanner(const char* title, const char* subtitle);
 void UpdatePhaseBanner(float dt);
 void DrawPhaseBanner(void);
 
-// Unified Glassmorphic HUD drawing helper
+// Unified Glassmorphic HUD drawing helpers
 void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const char* helpText);
+void DrawBottomHUD(const char* commands);
 
 // Ranking screen
 void Ranking_ScreenEnter(int score, float time, int phase);

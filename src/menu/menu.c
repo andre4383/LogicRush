@@ -283,7 +283,11 @@ void DrawTitleScreen(void) {
              13, dbg3Hover ? WHITE : ColorAlpha(COLOR_NEON_RED, 0.85f));
 
     // 7. Rodapé
+#ifdef __APPLE__
+    const char *footer = "Mouse para interagir  |  Ctrl+F: Tela cheia";
+#else
     const char *footer = "Mouse para interagir  |  F11: Tela cheia";
+#endif
     int         fw     = MeasureText(footer, 14);
     DrawText(footer, SCREEN_WIDTH / 2 - fw / 2,
              SCREEN_HEIGHT - 32, 14, COLOR_TEXT_MUTED);

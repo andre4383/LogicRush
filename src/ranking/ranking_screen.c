@@ -83,6 +83,9 @@ void UpdateRankingScreen(void) {
     screenTime += dt;
     if (nameErrorTimer > 0) nameErrorTimer -= dt;
 
+    // Prevent stale pause state from blocking ESC on this screen
+    gamePaused = false;
+
     // Animate rows flying in
     if (!rowsAnimDone) {
         bool allDone = true;
@@ -118,20 +121,32 @@ void UpdateRankingScreen(void) {
         return;
     }
 
-    // Name entry
+    // Name entry — use IsKeyPressed instead of GetCharPressed to avoid macOS
+    // text input system (NSResponder/IME) intercepting the ESC key
     if (showNameEntry && !nameSaved) {
-        int key = GetCharPressed();
-        while (key > 0) {
-            if ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z')
-                || (key >= '0' && key <= '9') || key == '_') {
-                if (nameLen < RANKING_NAME_LEN - 1) {
-                    nameInput[nameLen++] = (char)key;
-                    nameInput[nameLen]   = '\0';
-                }
+        // Letters A-Z (stored uppercase; KEY_A..KEY_Z == ASCII 'A'..'Z')
+        for (int k = KEY_A; k <= KEY_Z; k++) {
+            if (IsKeyPressed(k) && nameLen < RANKING_NAME_LEN - 1) {
+                nameInput[nameLen++] = (char)k;
+                nameInput[nameLen]   = '\0';
             }
-            key = GetCharPressed();
         }
-        if (IsKeyPressed(KEY_BACKSPACE) && nameLen > 0)
+        // Digits 0-9 (KEY_ZERO..KEY_NINE == ASCII '0'..'9')
+        for (int k = KEY_ZERO; k <= KEY_NINE; k++) {
+            if (IsKeyPressed(k) && nameLen < RANKING_NAME_LEN - 1) {
+                nameInput[nameLen++] = (char)k;
+                nameInput[nameLen]   = '\0';
+            }
+        }
+        // Underscore: Shift+Minus on most layouts
+        if (IsKeyPressed(KEY_MINUS)
+            && (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT))
+            && nameLen < RANKING_NAME_LEN - 1) {
+            nameInput[nameLen++] = '_';
+            nameInput[nameLen]   = '\0';
+        }
+
+        if (IsKeyPressedRepeat(KEY_BACKSPACE) && nameLen > 0)
             nameInput[--nameLen] = '\0';
 
         if (IsKeyPressed(KEY_ENTER) && nameLen > 0) {
