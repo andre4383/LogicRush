@@ -16,6 +16,7 @@ void AudioManager_Init(void) {
     InitAudioDevice();
     
     const char* menuPath = "assets/music/Fase Menu.mp3";
+    const char* quizPathNoAccent = "assets/music/Fase jogo da memoria 1.wav";
     const char* quizPathNFC = "assets/music/Fase jogo da memória 1.wav";
     const char* quizPathNFD = "assets/music/Fase jogo da memo\xcc\x81ria 1.wav";
     const char* labirintoPath = "assets/music/Fase Labirinto 2.wav";
@@ -29,7 +30,10 @@ void AudioManager_Init(void) {
         TraceLog(LOG_WARNING, "AudioManager: Could not find Menu music!");
     }
     
-    const char* quizPath = quizPathNFC;
+    const char* quizPath = quizPathNoAccent;
+    if (!FileExists(quizPath)) {
+        quizPath = quizPathNFC;
+    }
     if (!FileExists(quizPath)) {
         quizPath = quizPathNFD;
     }
