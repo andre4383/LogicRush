@@ -532,14 +532,12 @@ void MemoryGame_Draw(GameCtx *ctx)
     for (int y = 0; y < SCREEN_H; y += 4)
         DrawLine(0, y, SCREEN_W, y, ColorAlpha(COL_PANEL, 0.18f));
 
-    // HUD
-    DrawText(TextFormat("VIDAS: %d", ctx->lives),
-             35, 75, 16, COL_CORRECT);
+    // Pairs counter
     DrawText(TextFormat("PARES: %d / %d  (PRECISA DE %d)",
                         mgState.pairsFound,
                         mgState.pairsTotal,
                         mgState.pairsNeeded),
-             180, 75, 16, COL_TEXT);
+             35, 75, 16, COL_TEXT);
 
     // Phase label
     const char *phaseLabel = "";
@@ -567,7 +565,7 @@ void MemoryGame_Draw(GameCtx *ctx)
     }
     DrawText(phaseLabel,
              SCREEN_W / 2 - MeasureText(phaseLabel, 26) / 2,
-             SCREEN_H - 36, 26, phaseColor);
+             SCREEN_H - 70, 26, phaseColor);
 
     // Barra de tempo
     float progress = 1.0f;
@@ -589,9 +587,9 @@ void MemoryGame_Draw(GameCtx *ctx)
     if (showBar) {
         if (progress < 0.0f) progress = 0.0f;
         int barWidth = 400;
-        int barHeight = 16;
+        int barHeight = 14;
         int barX = SCREEN_W / 2 - barWidth / 2;
-        int barY = 75;
+        int barY = 97;
         DrawRectangle(barX, barY, barWidth, barHeight, ColorAlpha(COL_DIM, 0.5f));
         DrawRectangle(barX, barY, (int)(barWidth * progress), barHeight, barColor);
         DrawRectangleLines(barX, barY, barWidth, barHeight, WHITE);
