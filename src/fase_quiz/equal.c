@@ -58,8 +58,8 @@ void Equal_Draw(GameCtx *ctx, float x, float y, float scale) {
     else frame = ((int)(t * 1.2f)) % 2;  // idle toggle 0/1
 
     if (texEqQuizLoaded) {
-        float fw = floorf((float)texEqQuiz.width  / EQZ_COLS);
-        float fh = floorf((float)texEqQuiz.height / EQZ_ROWS);
+        float fw = roundf((float)texEqQuiz.width  / EQZ_COLS);
+        float fh = roundf((float)texEqQuiz.height / EQZ_ROWS);
         int col  = frame % EQZ_COLS;
         int row  = frame / EQZ_COLS;
         float ins = 1.0f;
