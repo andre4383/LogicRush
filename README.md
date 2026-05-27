@@ -1,24 +1,23 @@
 # Logic Rush
-Logic Rush is a fast-paced game centered on constant challenges of logical equivalence
-Players take on the role of an inventor facing off against their own creation, a glitched AI named Equal.
+Logic Rush é um jogo rápido focado em desafios constantes de equivalência lógica.
+Os jogadores assumem o papel de um inventor enfrentando sua própria criação: uma IA com falhas chamada Equal.
 
-## The Story
-In a world driven by AI innovation, the "Equal" project was meant to be a masterpiece of life-like technology
-however, a critical programming error in her logical equivalence processing caused her to see the world through a distorted lens
-Now erratic and unstable, Equal is attempting to seize control of the systems, and you must dive into the code to fix the problem before it's too late
+## A história
+Em um mundo movido pela inovação em inteligência artificial, o projeto “Equal” deveria ser uma obra-prima da tecnologia com comportamento humano.
+Porém, um erro crítico na programação do sistema de equivalência lógica fez com que ela passasse a enxergar o mundo de forma distorcida.
 
-## Gameplay Overview
-The experience is inspired by high-energy "party games" and features a cycling difficulty system that gets harder with every completed loop
+## Visão Geral da Gameplay
+A experiência é inspirada em “party games” de alta intensidade e conta com um sistema de dificuldade cíclico, que fica mais difícil a cada loop concluído.
 
 # Mini-Games:
-### Memory Cards:
-- Flip cards to find matching logical equivalence symbols before time runs out
+### Cartas da Memória:
+- Vire cartas para encontrar símbolos equivalentes antes que o tempo acabe.
 
-### Entangled Circuitry (Maze):
-- Navigate a path where progress is blocked by logical gates. Solve the equations quickly to pass, or lose the game
+### Circuitos Emaranhados (Labirinto):
+- Navegue por caminhos bloqueados por portas lógicas. Resolva rapidamente as equações para avançar, ou perca o jogo.
 
-### Meeting Equal (Boss Fight):
-- Face the AI directly as she hurls complex logical expressions at you, Simplify these expressions using cubes to repair the data and reflect the damage back at her
+### Enfrentando Equal (Boss Fight):
+- Encare a IA diretamente enquanto ela lança expressões lógicas complexas contra você. Simplifique essas expressões usando cubos para reparar os dados e refletir o dano de volta nela.
 
 ## Placar de Líderes ao Vivo
 
@@ -90,9 +89,9 @@ make run
 set RAYLIB_PATH=D:\libs\raylib && make run
 ```
 
-## The Team
-### PROGRAMMERS 
-- Afonso Araújo 
+## A equipe
+### PROGRAMADOREES 
+- Afonso Araujo 
 - Lucas Gabriel 
 - André Montenegro
 - Pedro Lima 
@@ -100,5 +99,5 @@ set RAYLIB_PATH=D:\libs\raylib && make run
 - Vitor Emmanuel 
 - Williams Pontes
 
-### ART DIRECTOR
+### DIRETOR DE ARTE
 - Breno Gabriel
