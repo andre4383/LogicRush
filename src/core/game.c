@@ -1,5 +1,6 @@
 #include "game.h"
 #include "screens.h"
+#include "audio_manager.h"
 #include "theme.h"
 #include "../fase_quiz/game.h"
 #include "../fase_quiz/memory_game.h"
@@ -282,6 +283,9 @@ void InitGame(void) {
     InitTitleScreen();
     InitGameplayScreen();
     InitBossScreen();
+
+    // Initialize audio manager
+    AudioManager_Init();
 }
 
 void DrawPauseOverlay(void) {
@@ -319,6 +323,14 @@ void DrawPauseOverlay(void) {
 void UpdateGame(void) {
     // Fullscreen toggle
     if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
+
+    // Update audio and screen-specific music transitions
+    static GameScreen lastScreen = SCREEN_LOGO;
+    if (currentScreen != lastScreen) {
+        AudioManager_TransitionToScreen(currentScreen);
+        lastScreen = currentScreen;
+    }
+    AudioManager_Update(GetFrameTime());
 
     if (gamePaused) {
         if (IsKeyPressed(KEY_ESCAPE)) {
@@ -402,4 +414,7 @@ void UnloadGame(void) {
     // Unload global fonts
     UnloadFont(fontMain);
     UnloadFont(fontBold);
+
+    // Unload audio manager and close device
+    AudioManager_Unload();
 }
