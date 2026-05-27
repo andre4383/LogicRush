@@ -178,6 +178,7 @@ void UpdateQuizScreen(void) {
             if (CheckCollisionPointRec(mousePos, btnRestart)) {
                 globalScore = 0;
                 globalTimer = 0.0f;
+                globalLives = 3;
                 InitQuizScreen();
             }
             if (CheckCollisionPointRec(mousePos, btnMenu)) {
@@ -187,6 +188,7 @@ void UpdateQuizScreen(void) {
         if (IsKeyPressed(KEY_SPACE)) {
             globalScore = 0;
             globalTimer = 0.0f;
+            globalLives = 3;
             InitQuizScreen();
         }
         if (IsKeyPressed(KEY_ESCAPE)) {
