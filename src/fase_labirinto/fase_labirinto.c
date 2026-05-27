@@ -5,6 +5,7 @@
 #include "../dialogue/dialogue.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // ── Sprite textures for labirinto ────────────────────────────────────────────
