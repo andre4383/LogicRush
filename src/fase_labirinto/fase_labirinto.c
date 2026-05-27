@@ -2,6 +2,7 @@
 #include "../core/ranking.h"
 #include "../core/screens.h"
 #include "../core/theme.h"
+#include "../dialogue/dialogue.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -124,6 +125,8 @@ static int lastInteractedBarrierIdx = -1;
 static bool gameOver = false;
 static float errorCooldownTimer = 0.0f;
 
+// Flags de história (resetadas em InitGameplayScreen via ResetLevel)
+static bool storyPostPhase2Sent = false; // Controla envio dos diálogos pós-fase 2
 // Gate combo — answer 3 gates quickly in sequence to gain 1 life
 #define GATE_QUICK_THRESHOLD 5.0f  // max seconds to answer and count as "quick"
 #define GATE_COMBO_WINDOW   12.0f  // max seconds between consecutive quick answers
@@ -655,6 +658,7 @@ static void ResetLevel(void) {
     errorCooldownTimer = 0.0f;
     activeBarrierChallengeIdx = -1;
     lastInteractedBarrierIdx = -1;
+    storyPostPhase2Sent = false;
     gateStreak            = 0;
     propositionTimer      = 0.0f;
     gateComboWindow       = 0.0f;
@@ -729,7 +733,13 @@ static void UpdateEnemy(float dt) {
         float distToPlayer = sqrtf((playerPos.x - enemyPos.x) * (playerPos.x - enemyPos.x) + (playerPos.y - enemyPos.y) * (playerPos.y - enemyPos.y));
         if (distToPlayer < (enemyRadius + playerRadius)) {
             gameOver = true;
-            globalLives = 0;  // sync global lives
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: consome uma vida
+                globalLives--;
+                if (globalLives < 0) globalLives = 0;
+            } else {
+                globalLives = 0;  // Modo Competitivo: game over direto
+            }
         }
     }
 }
@@ -748,6 +758,15 @@ void UpdateGameplayScreen(void) {
     }
     
     if (gameWon) {
+        // Modo História: mostrar diálogos pós-fase 2 antes de ir ao boss
+        if (currentGameMode == MODE_STORY && !storyPostPhase2Sent) {
+            storyPostPhase2Sent = true;
+            InitBossScreen();
+            Dialogue_StartSeq(DSEQ_POST_FASE2, SCREEN_BOSS);
+            currentScreen = SCREEN_STORY_DIALOGUE;
+            return;
+        }
+
         if (IsKeyPressed(KEY_SPACE)) {
             if (currentLevelIdx < MAX_LEVELS - 1) {
                 currentLevelIdx++;
@@ -763,7 +782,7 @@ void UpdateGameplayScreen(void) {
             currentScreen = SCREEN_TITLE;
             return;
         }
-        
+
         // Mouse click detection
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
@@ -788,8 +807,22 @@ void UpdateGameplayScreen(void) {
         }
         return;
     }
-    
+
     if (gameOver) {
+        // ── Modo História: respawn se ainda tem vidas ─────────────────────────
+        if (currentGameMode == MODE_STORY) {
+            if (globalLives > 0) {
+                // Reinicia a fase sem exibir diálogos novamente
+                ResetLevel();
+                return;
+            } else {
+                // Sem vidas → volta ao menu sem ranking
+                currentScreen = SCREEN_TITLE;
+                return;
+            }
+        }
+
+        // ── Modo Competitivo: comportamento original ──────────────────────────
         static bool rankingTrigLab = false;
         if (!rankingTrigLab) {
             rankingTrigLab = true;
@@ -806,7 +839,7 @@ void UpdateGameplayScreen(void) {
             currentScreen = SCREEN_TITLE;
             return;
         }
-        
+
         // Mouse interaction for Game Over
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
@@ -814,6 +847,7 @@ void UpdateGameplayScreen(void) {
         Vector2 mousePos = GetMousePosition();
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (CheckCollisionPointRec(mousePos, btnRestart)) {
+                rankingTrigLab = false;
                 ResetLevel();
                 return;
             }
@@ -826,15 +860,24 @@ void UpdateGameplayScreen(void) {
     }
     
     if (isIntroActive) {
-        if (IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)) {
-            isIntroActive = false;
-        }
-        
+        bool closePopup = false;
+
+        if (IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)) closePopup = true;
+
         // Check for glass panel button click
         Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f + 165, 200, 45 };
         Vector2 mousePos = GetMousePosition();
-        if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            closePopup = true;
+
+        if (closePopup) {
             isIntroActive = false;
+            // Modo História: exibir diálogos pré-fase 2 se ainda não foram mostrados
+            if (currentGameMode == MODE_STORY && !storyMazeDialogueShown) {
+                storyMazeDialogueShown = true;
+                Dialogue_StartSeq(DSEQ_PRE_FASE2, SCREEN_GAMEPLAY);
+                currentScreen = SCREEN_STORY_DIALOGUE;
+            }
         }
         return;
     }

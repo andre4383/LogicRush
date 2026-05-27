@@ -5,11 +5,17 @@
 #include <stdlib.h>
 
 // ── Botões do menu principal ─────────────────────────────────────────────────
-static Rectangle playButton = {
-    SCREEN_WIDTH / 2.0f - 160, SCREEN_HEIGHT / 2.0f + 20, 320, 58
+// Modo História
+static Rectangle storyButton = {
+    SCREEN_WIDTH / 2.0f - 160, SCREEN_HEIGHT / 2.0f + 0, 320, 58
 };
+// Modo Competitivo
+static Rectangle competButton = {
+    SCREEN_WIDTH / 2.0f - 160, SCREEN_HEIGHT / 2.0f + 72, 320, 58
+};
+// Sair
 static Rectangle exitButton = {
-    SCREEN_WIDTH / 2.0f - 160, SCREEN_HEIGHT / 2.0f + 98, 320, 58
+    SCREEN_WIDTH / 2.0f - 160, SCREEN_HEIGHT / 2.0f + 150, 320, 58
 };
 
 // ── Botões de pulo rápido de fase (modo teste) ───────────────────────────────
@@ -31,16 +37,18 @@ static Rectangle dbgFase3Btn = { DBG_BTN_X,
     SCREEN_HEIGHT - DBG_BTN_H,
     DBG_BTN_W, DBG_BTN_H };
 
-static bool playHover  = false;
-static bool exitHover  = false;
-static bool dbg1Hover  = false;
-static bool dbg2Hover  = false;
-static bool dbg3Hover  = false;
-static float titleGlow = 0.0f;
+static bool storyHover  = false;
+static bool competHover = false;
+static bool exitHover   = false;
+static bool dbg1Hover   = false;
+static bool dbg2Hover   = false;
+static bool dbg3Hover   = false;
+static float titleGlow    = 0.0f;
 static int   titleGlowDir = 1;
 
 void InitTitleScreen(void) {
-    playHover    = false;
+    storyHover   = false;
+    competHover  = false;
     exitHover    = false;
     dbg1Hover    = false;
     dbg2Hover    = false;
@@ -52,24 +60,40 @@ void InitTitleScreen(void) {
 void UpdateTitleScreen(void) {
     Vector2 mouse = GetMousePosition();
 
-    playHover = CheckCollisionPointRec(mouse, playButton);
-    exitHover = CheckCollisionPointRec(mouse, exitButton);
-    dbg1Hover = CheckCollisionPointRec(mouse, dbgFase1Btn);
-    dbg2Hover = CheckCollisionPointRec(mouse, dbgFase2Btn);
-    dbg3Hover = CheckCollisionPointRec(mouse, dbgFase3Btn);
+    storyHover  = CheckCollisionPointRec(mouse, storyButton);
+    competHover = CheckCollisionPointRec(mouse, competButton);
+    exitHover   = CheckCollisionPointRec(mouse, exitButton);
+    dbg1Hover   = CheckCollisionPointRec(mouse, dbgFase1Btn);
+    dbg2Hover   = CheckCollisionPointRec(mouse, dbgFase2Btn);
+    dbg3Hover   = CheckCollisionPointRec(mouse, dbgFase3Btn);
 
     // Anima brilho do título
     titleGlow += 0.018f * titleGlowDir;
     if      (titleGlow >= 1.0f) { titleGlow = 1.0f; titleGlowDir = -1; }
     else if (titleGlow <= 0.0f) { titleGlow = 0.0f; titleGlowDir =  1; }
 
-    // ── Botão JOGAR (fluxo normal: Fase 1) ──────────────────────────────────
-    if (playHover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    // ── Botão MODO HISTÓRIA ──────────────────────────────────────────────────
+    if (storyHover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         globalTimer = 0.0f;
         globalScore = 0;
-        globalLives = 3;  // reset lives for new game
+        globalLives = 3;
         gameRunning = true;
         gamePaused  = false;
+        currentGameMode = MODE_STORY;
+        Story_ResetFlags();
+        InitIntroScreen();
+        currentScreen = SCREEN_INTRO;
+    }
+
+    // ── Botão MODO COMPETITIVO ───────────────────────────────────────────────
+    if (competHover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        globalTimer = 0.0f;
+        globalScore = 0;
+        globalLives = 3;
+        gameRunning = true;
+        gamePaused  = false;
+        currentGameMode = MODE_COMPETITIVE;
+        Story_ResetFlags();
         InitQuizScreen();
         currentScreen = SCREEN_QUIZ;
         StartPhaseBanner("FASE 1", "QUIZ DE EQUIVALÊNCIAS");
@@ -193,13 +217,22 @@ void DrawTitleScreen(void) {
     DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
 
     // 5. Botões principais
-    DrawThemeButton(playButton, "JOGAR",          18, playHover, COLOR_NEON_CYAN);
-    DrawThemeButton(exitButton, "FECHAR SISTEMA", 18, exitHover, COLOR_NEON_RED);
+    DrawThemeButton(storyButton,  "MODO HISTORIA",    18, storyHover,  COLOR_NEON_CYAN);
+    DrawThemeButton(competButton, "MODO COMPETITIVO", 18, competHover, COLOR_NEON_GOLD);
+    DrawThemeButton(exitButton,   "FECHAR SISTEMA",   18, exitHover,   COLOR_NEON_RED);
 
-    int lw1 = MeasureText("Iniciar Desafios de Lógica Proposicional", 13);
-    DrawText("Iniciar Desafios de Lógica Proposicional",
-             (int)(playButton.x + playButton.width / 2 - lw1 / 2),
-             (int)(playButton.y + playButton.height + 4), 13, COLOR_TEXT_MUTED);
+    // Subtítulos dos botões
+    int sw1 = MeasureText("Narrativa com dialogos — sem pontuacao", 12);
+    DrawText("Narrativa com dialogos — sem pontuacao",
+             (int)(storyButton.x + storyButton.width / 2 - sw1 / 2),
+             (int)(storyButton.y + storyButton.height + 4), 12,
+             COLOR_TEXT_MUTED);
+
+    int cw1 = MeasureText("Pontuacao e ranking — sem dialogos", 12);
+    DrawText("Pontuacao e ranking — sem dialogos",
+             (int)(competButton.x + competButton.width / 2 - cw1 / 2),
+             (int)(competButton.y + competButton.height + 4), 12,
+             COLOR_TEXT_MUTED);
 
     // 6. Painel de debug (canto inferior esquerdo) ────────────────────────────
     // Fundo do painel

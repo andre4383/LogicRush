@@ -3,11 +3,30 @@
 #include "theme.h"
 #include "../fase_quiz/game.h"
 #include "../fase_quiz/memory_game.h"
+#include "../dialogue/dialogue.h"
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 #include "ranking.h"
 
 // Define the global active screen
 GameScreen currentScreen = SCREEN_TITLE;
+
+// Modo de jogo atual
+GameMode currentGameMode = MODE_COMPETITIVE;
+
+// ── Flags de estado do Modo História ────────────────────────────────────────
+bool storyQuizDialogueShown  = false;
+bool storyMazeDialogueShown  = false;
+bool storyBossPhase2Shown    = false;
+bool storyBossPhase3Shown    = false;
+
+void Story_ResetFlags(void) {
+    storyQuizDialogueShown  = false;
+    storyMazeDialogueShown  = false;
+    storyBossPhase2Shown    = false;
+    storyBossPhase3Shown    = false;
+}
 
 // Global font variables
 Font fontMain;
@@ -209,15 +228,30 @@ void UpdateQuizScreen(void) {
     extern MemoryGameState mgState;
     if (mgState.phase == MG_PHASE_DONE) {
         if (mgState.passed) {
-            // Quiz passed! Transition to Labyrinth (Fase 2)
-            currentScreen = SCREEN_GAMEPLAY;
-            InitGameplayScreen();
-            StartPhaseBanner("FASE 2", "LABIRINTO DE PORTAS");
+            // Quiz passed!
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: exibir diálogos pós-fase 1 antes do labirinto
+                // A transição para SCREEN_GAMEPLAY acontece quando os diálogos terminarem
+                // Pré-inicia a tela de gameplay para estar pronta
+                InitGameplayScreen();
+                Dialogue_StartSeq(DSEQ_POST_FASE1, SCREEN_GAMEPLAY);
+                currentScreen = SCREEN_STORY_DIALOGUE;
+            } else {
+                // Modo Competitivo: transição direta
+                currentScreen = SCREEN_GAMEPLAY;
+                InitGameplayScreen();
+                StartPhaseBanner("FASE 2", "LABIRINTO DE PORTAS");
+            }
         } else {
             quizCtx.state = STATE_GAME_OVER;
-            // Trigger ranking screen on death
-            Ranking_ScreenEnter(globalScore, globalTimer, 1);
-            currentScreen = SCREEN_RANKING;
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: sem ranking, volta ao menu
+                currentScreen = SCREEN_TITLE;
+            } else {
+                // Modo Competitivo: exibe ranking
+                Ranking_ScreenEnter(globalScore, globalTimer, 1);
+                currentScreen = SCREEN_RANKING;
+            }
         }
     }
 }
@@ -321,6 +355,9 @@ void InitGame(void) {
     // Load leaderboard from disk
     Ranking_Load();
 
+    // Initialize dialogue system
+    Dialogue_Init();
+
     // Initialise all screens
     InitTitleScreen();
     InitGameplayScreen();
@@ -394,6 +431,12 @@ void UpdateGame(void) {
         case SCREEN_TITLE:
             UpdateTitleScreen();
             break;
+        case SCREEN_INTRO:
+            UpdateIntroScreen();
+            break;
+        case SCREEN_STORY_DIALOGUE:
+            Dialogue_Update();
+            break;
         case SCREEN_QUIZ:
             UpdateQuizScreen();
             break;
@@ -416,6 +459,15 @@ void DrawGame(void) {
     switch (currentScreen) {
         case SCREEN_TITLE:
             DrawTitleScreen();
+            break;
+        case SCREEN_INTRO:
+            DrawIntroScreen();
+            break;
+        case SCREEN_STORY_DIALOGUE:
+            // Desenha fundo escuro e o diálogo por cima
+            ClearBackground(COLOR_BG_DARK);
+            DrawThemeGrid(SCREEN_WIDTH, SCREEN_HEIGHT, CELL_SIZE);
+            Dialogue_Draw();
             break;
         case SCREEN_QUIZ:
             DrawQuizScreen();
@@ -445,7 +497,9 @@ void UnloadGame(void) {
     UnloadQuizScreen();
     UnloadGameplayScreen();
     UnloadBossScreen();
-    
+    UnloadIntroScreen();
+    Dialogue_Unload();
+
     // Unload global fonts
     UnloadFont(fontMain);
     UnloadFont(fontBold);

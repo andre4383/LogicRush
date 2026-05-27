@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>  // system()
 
 #define MAX_VISIBLE     10
 #define ENTRY_H         48.0f
@@ -163,6 +164,15 @@ void UpdateRankingScreen(void) {
                     rowAnim[i]  = (i == insertedPos) ? 0.0f : 1.0f;
                 }
                 rowsAnimDone = false;
+
+                // Modo Competitivo: lança ranking_viewer.exe para exibir o placar
+                if (currentGameMode == MODE_COMPETITIVE) {
+#ifdef _WIN32
+                    system("start \"\" ranking_viewer.exe");
+#else
+                    system("./ranking_viewer &");
+#endif
+                }
             }
         }
     }

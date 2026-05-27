@@ -1,5 +1,6 @@
 // ==================================================================================
 //              FASE 3 — MEETING EQUAL — LOGIC RUSH
+//  (Suporta Modo Historia com diálogos via dialogue.c)
 //   A IA "Equal" lança cubos com proposições lógicas.
 //   Clique na opção correta com o mouse antes do timer acabar.
 //
@@ -13,6 +14,7 @@
 #include "../core/game.h"
 #include "../core/ranking.h"
 #include "../core/theme.h"
+#include "../dialogue/dialogue.h"
 #include <stddef.h>
 #include <string.h>
 #include <math.h>
@@ -233,7 +235,8 @@ typedef enum {
     BPHASE_BOSS_HIT,
     BPHASE_PLAYER_HIT,
     BPHASE_VICTORY,
-    BPHASE_DEFEAT
+    BPHASE_DEFEAT,
+    BPHASE_STORY_VICTORY_POPUP  // Modo História: popup de sistema após vitória
 } BossPhase;
 
 typedef struct {
@@ -254,6 +257,12 @@ typedef struct {
 // ==================================================================================
 //                              ESTADO GLOBAL
 // ==================================================================================
+
+// Flags de controle do Modo História (resetadas em InitBossScreen)
+static bool storyVictoryStarted  = false;
+static bool storyDefeatHandled   = false;
+static bool rankingTriggeredBoss = false;
+static bool rankingTrigDBoss     = false;
 
 static BossState boss;
 static LogicCube cubes[MAX_CUBES];
@@ -642,6 +651,12 @@ static void UpdateCardLayout(int numCards) {
 // ==================================================================================
 
 void InitBossScreen(void) {
+    // Reseta flags de história
+    storyVictoryStarted  = false;
+    storyDefeatHandled   = false;
+    rankingTriggeredBoss = false;
+    rankingTrigDBoss     = false;
+
     boss.bossHP        = BOSS_MAX_HP;
     boss.playerHP      = (globalLives > 0 && globalLives <= PLAYER_MAX_HP)
                          ? globalLives : PLAYER_MAX_HP;
@@ -875,8 +890,15 @@ void UpdateBossScreen(void) {
         return;
     }
 
+    // ── Modo História: diálogos como overlay (pausa o boss) ──────────────────
+    if (Dialogue_IsActive()) {
+        Dialogue_Update();
+        return;
+    }
+
     if (IsKeyPressed(KEY_ESCAPE)) {
-        if (boss.phase != BPHASE_VICTORY && boss.phase != BPHASE_DEFEAT)
+        if (boss.phase != BPHASE_VICTORY && boss.phase != BPHASE_DEFEAT
+            && boss.phase != BPHASE_STORY_VICTORY_POPUP)
             gamePaused = true;
         else
             currentScreen = SCREEN_TITLE;
@@ -888,31 +910,75 @@ void UpdateBossScreen(void) {
         globalTimer += dt;
     }
 
+    // ── BPHASE_INTRO ──────────────────────────────────────────────────────────
     if (boss.phase == BPHASE_INTRO) {
         boss.phaseTimer -= dt;
-        if (boss.phaseTimer <= 0.0f) boss.phase = BPHASE_FIGHTING;
+        if (boss.phaseTimer <= 0.0f) {
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: mostra diálogos de abertura antes de começar
+                Dialogue_StartSeq(DSEQ_BOSS_OPEN, SCREEN_BOSS);
+                boss.phase = BPHASE_FIGHTING; // já prepara o estado; diálogos pausam
+            } else {
+                boss.phase = BPHASE_FIGHTING;
+            }
+        }
         return;
     }
 
+    // ── BPHASE_VICTORY ────────────────────────────────────────────────────────
     if (boss.phase == BPHASE_VICTORY) {
-        // Transition to ranking - triggered once
-        static bool rankingTriggered = false;
-        if (!rankingTriggered) {
-            rankingTriggered = true;
-            Ranking_ScreenEnter(globalScore, globalTimer, 3);
-            currentScreen = SCREEN_RANKING;
+        if (currentGameMode == MODE_STORY) {
+            if (!storyVictoryStarted) {
+                storyVictoryStarted = true;
+                // Mostra diálogo final de Equal
+                Dialogue_StartSeq(DSEQ_BOSS_DEFEAT, SCREEN_BOSS);
+            } else if (!Dialogue_IsActive()) {
+                // Diálogos terminaram → popup de sistema
+                boss.phase = BPHASE_STORY_VICTORY_POPUP;
+            }
+        } else {
+            // Modo Competitivo: comportamento original
+            if (!rankingTriggeredBoss) {
+                rankingTriggeredBoss = true;
+                Ranking_ScreenEnter(globalScore, globalTimer, 3);
+                currentScreen = SCREEN_RANKING;
+            }
+            if (IsKeyPressed(KEY_ENTER)) {
+                rankingTriggeredBoss = false;
+                currentScreen = SCREEN_TITLE;
+            }
         }
-        if (IsKeyPressed(KEY_ENTER)) { rankingTriggered=false; currentScreen = SCREEN_TITLE; }
         return;
     }
-    if (boss.phase == BPHASE_DEFEAT) {
-        static bool rankingTrigD = false;
-        if (!rankingTrigD) {
-            rankingTrigD = true;
-            Ranking_ScreenEnter(globalScore, globalTimer, 3);
-            currentScreen = SCREEN_RANKING;
+
+    // ── BPHASE_STORY_VICTORY_POPUP ────────────────────────────────────────────
+    if (boss.phase == BPHASE_STORY_VICTORY_POPUP) {
+        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)
+            || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            currentScreen = SCREEN_TITLE;
         }
-        if (IsKeyPressed(KEY_ENTER)) { rankingTrigD=false; currentScreen = SCREEN_TITLE; }
+        return;
+    }
+
+    // ── BPHASE_DEFEAT ─────────────────────────────────────────────────────────
+    if (boss.phase == BPHASE_DEFEAT) {
+        if (currentGameMode == MODE_STORY) {
+            // Modo História: sem ranking, volta ao menu
+            if (!storyDefeatHandled) {
+                storyDefeatHandled = true;
+                currentScreen = SCREEN_TITLE;
+            }
+        } else {
+            if (!rankingTrigDBoss) {
+                rankingTrigDBoss = true;
+                Ranking_ScreenEnter(globalScore, globalTimer, 3);
+                currentScreen = SCREEN_RANKING;
+            }
+            if (IsKeyPressed(KEY_ENTER)) {
+                rankingTrigDBoss = false;
+                currentScreen = SCREEN_TITLE;
+            }
+        }
         return;
     }
 
@@ -939,6 +1005,18 @@ void UpdateBossScreen(void) {
     if (boss.shieldTimer  > 0.0f) boss.shieldTimer  -= dt;
     if (playerBlockTimer  > 0.0f) playerBlockTimer  -= dt;
     if (playerHitTimer    > 0.0f) playerHitTimer    -= dt;
+
+    // ── Modo História: diálogos de threshold de HP ───────────────────────────
+    if (currentGameMode == MODE_STORY && boss.phase == BPHASE_FIGHTING) {
+        if (!storyBossPhase2Shown && boss.bossHP <= BOSS_HP_STAGE2) {
+            storyBossPhase2Shown = true;
+            Dialogue_StartSeq(DSEQ_BOSS_MID, SCREEN_BOSS);
+        }
+        if (!storyBossPhase3Shown && boss.bossHP <= BOSS_HP_STAGE3) {
+            storyBossPhase3Shown = true;
+            Dialogue_StartSeq(DSEQ_BOSS_LOW, SCREEN_BOSS);
+        }
+    }
 
     // Spawn
     if (boss.phase == BPHASE_FIGHTING) {
@@ -1418,17 +1496,52 @@ void DrawBossScreen(void) {
     }
 
     if (boss.phase == BPHASE_VICTORY) {
-        DrawRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT,ColorAlpha(BLACK,0.70f));
-        const char *wt = "EQUAL DERROTADA!";
-        DrawText(wt, SCREEN_WIDTH/2-MeasureText(wt,56)/2, SCREEN_HEIGHT/2-72, 56,
-                 COLOR_NEON_GREEN);
-        const char *ws = "Os sistemas foram restaurados com sucesso!";
-        DrawText(ws, SCREEN_WIDTH/2-MeasureText(ws,20)/2, SCREEN_HEIGHT/2, 20, COLOR_TEXT_MUTED);
-        const char *sc = TextFormat("PONTUACAO FINAL: %d", globalScore);
-        DrawText(sc, SCREEN_WIDTH/2-MeasureText(sc,26)/2, SCREEN_HEIGHT/2+36, 26, COLOR_NEON_GOLD);
+        if (currentGameMode == MODE_STORY) {
+            // Modo História: fundo escurecido durante diálogos de derrota
+            DrawRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT,ColorAlpha(BLACK,0.55f));
+        } else {
+            DrawRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT,ColorAlpha(BLACK,0.70f));
+            const char *wt = "EQUAL DERROTADA!";
+            DrawText(wt, SCREEN_WIDTH/2-MeasureText(wt,56)/2, SCREEN_HEIGHT/2-72, 56,
+                     COLOR_NEON_GREEN);
+            const char *ws = "Os sistemas foram restaurados com sucesso!";
+            DrawText(ws, SCREEN_WIDTH/2-MeasureText(ws,20)/2, SCREEN_HEIGHT/2, 20, COLOR_TEXT_MUTED);
+            const char *sc = TextFormat("PONTUACAO FINAL: %d", globalScore);
+            DrawText(sc, SCREEN_WIDTH/2-MeasureText(sc,26)/2, SCREEN_HEIGHT/2+36, 26, COLOR_NEON_GOLD);
+            if (sinf(t*3.0f) > 0.0f) {
+                const char *et = "Pressione ENTER para voltar ao Menu";
+                DrawText(et, SCREEN_WIDTH/2-MeasureText(et,18)/2, SCREEN_HEIGHT/2+80, 18, COLOR_TEXT_MUTED);
+            }
+        }
+    }
+
+    // ── Popup de sistema (Modo História, pós-vitória) ────────────────────────
+    if (boss.phase == BPHASE_STORY_VICTORY_POPUP) {
+        DrawRectangle(0,0,SCREEN_WIDTH,SCREEN_HEIGHT,ColorAlpha(BLACK,0.80f));
+
+        // Painel central estilo terminal
+        float pw = 760, ph = 200;
+        float px = SCREEN_WIDTH/2.0f - pw/2.0f, py = SCREEN_HEIGHT/2.0f - ph/2.0f;
+        Rectangle panel = {px, py, pw, ph};
+        DrawThemeGlassPanel(panel, 0.06f, COLOR_NEON_GREEN);
+
+        // Borda ciano pulsante
+        float pulse = 0.6f + sinf(t*4.0f)*0.3f;
+        DrawRectangleLinesEx(panel, 2.0f, ColorAlpha(COLOR_NEON_GREEN, pulse));
+
+        // Texto da mensagem do sistema
+        const char *line1 = "PROCESSO  'EQUAL.EXE'  ENCERRADO COM SUCESSO.";
+        const char *line2 = "PRIVILEGIOS DE ADMINISTRADOR RESTAURADOS.";
+        int l1w = MeasureTextBold(line1, 20);
+        int l2w = MeasureTextBold(line2, 20);
+        DrawTextBold(line1, (int)(px+pw/2-l1w/2), (int)(py+50), 20, COLOR_NEON_GREEN);
+        DrawTextBold(line2, (int)(px+pw/2-l2w/2), (int)(py+82), 20, COLOR_NEON_GREEN);
+
+        // Dica piscante
         if (sinf(t*3.0f) > 0.0f) {
-            const char *et = "Pressione ENTER para voltar ao Menu";
-            DrawText(et, SCREEN_WIDTH/2-MeasureText(et,18)/2, SCREEN_HEIGHT/2+80, 18, COLOR_TEXT_MUTED);
+            const char *hint = "[ ENTER ] Finalizar";
+            int hw = MeasureText(hint, 15);
+            DrawText(hint, (int)(px+pw/2-hw/2), (int)(py+140), 15, COLOR_TEXT_MUTED);
         }
     }
 
@@ -1438,10 +1551,15 @@ void DrawBossScreen(void) {
         DrawText(lt, SCREEN_WIDTH/2-MeasureText(lt,50)/2, SCREEN_HEIGHT/2-70, 50, COLOR_NEON_RED);
         const char *ls = "Equal tomou controle total dos sistemas!";
         DrawText(ls, SCREEN_WIDTH/2-MeasureText(ls,20)/2, SCREEN_HEIGHT/2+4, 20, COLOR_TEXT_MUTED);
-        if (sinf(t*3.0f) > 0.0f) {
+        if (currentGameMode != MODE_STORY && sinf(t*3.0f) > 0.0f) {
             const char *rt = "Pressione ENTER para tentar novamente";
             DrawText(rt, SCREEN_WIDTH/2-MeasureText(rt,18)/2, SCREEN_HEIGHT/2+50, 18, COLOR_TEXT_MUTED);
         }
+    }
+
+    // ── Modo História: diálogo como overlay por cima de tudo ─────────────────
+    if (Dialogue_IsActive()) {
+        Dialogue_Draw();
     }
 
     DrawPhaseBanner();

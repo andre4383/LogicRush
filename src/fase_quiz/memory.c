@@ -103,6 +103,8 @@ void MemoryGame_Init(GameCtx *ctx)
     mgState.sel[0]      = -1;
     mgState.sel[1]      = -1;
     mgState.selCount    = 0;
+    mgState.wrongStreak = 0;
+    ctx->mood           = EQUAL_NORMAL;   // reinicia para idle a cada ciclo
     mgState.phase             = MG_PHASE_SHOW;
     mgState.passed            = false;
     mgState.wrongStreak       = 0;
@@ -241,8 +243,10 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
 
         case MG_PHASE_HIDE:
             mgState.phaseTimer -= dt;
-            if (mgState.phaseTimer <= 0.0f)
+            if (mgState.phaseTimer <= 0.0f) {
                 mgState.phase = MG_PHASE_PLAY;
+                ctx->mood     = EQUAL_PREPARING;  // entra em modo "preparando ataque"
+            }
             break;
 
         // ── Player input ─────────────────────────────────────────────
@@ -365,7 +369,7 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     mgState.phase      = MG_PHASE_RESULT;
                     mgState.phaseTimer = 2.0f;
                     globalScore        += 500;
-                    ctx->mood = EQUAL_NORMAL;
+                    ctx->mood          = EQUAL_DEFEATED;  // frame de derrota do ciborg
                 }
                 else
                 {
