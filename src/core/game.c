@@ -434,6 +434,8 @@ void DrawGame(void) {
         DrawPauseOverlay();
         Input_DrawCursor();
     }
+
+    Input_DrawDebug();
 }
 
 void UnloadGame(void) {

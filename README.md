@@ -74,22 +74,49 @@ make run_viewer   # compila e abre só o viewer
 
 ---
 
-## Controle (Gamepad 8BitDo)
+## Controle (mouse, teclado e 8BitDo)
 
-O jogo aceita **teclado + mouse** e **gamepad** (layout Xbox — use o 8BitDo em **modo X**).
+O jogo aceita **teclado + mouse** e **gamepad** ao mesmo tempo (layout Xbox nos botões). O mapeamento do 8BitDo é carregado de `assets/gamecontrollerdb.txt` na inicialização.
 
-| Ação | Teclado / mouse | Gamepad (modo X) |
-|------|-----------------|------------------|
+### Pareamento do 8BitDo Ultimate 2C
+
+| Conexão | Configuração |
+|---------|----------------|
+| **Bluetooth + macOS** | Interruptor traseiro em **D** → segurar o botão de pareamento (estrela) 3 s → parear em Ajustes do Sistema → abrir o jogo |
+| **Dongle 2,4 GHz / USB** | Pode usar perfil Xbox (X+Home) se preferir; o Windows/Linux usam as linhas correspondentes no DB |
+
+Pareie o controle **antes** de `make run` quando possível. Se conectar depois, o jogo reaplica o mapeamento automaticamente.
+
+### Tabela de controles
+
+| Ação | Teclado / mouse | Gamepad |
+|------|-----------------|---------|
 | Mover (labirinto) | WASD / setas | Analógico esquerdo ou D-pad |
-| Cursor (menu, cartas, boss) | Mouse | Analógico direito |
+| Cursor (menu, cartas, boss) | Mouse | Analógico direito (ou D-pad se o stick direito estiver parado) |
 | Selecionar / confirmar | Clique / Enter / Espaço | **A** |
 | Voltar / pausar | ESC | **B** ou Start |
 | Portão Verdadeiro | V | **Y** |
 | Portão Falso | F | **X** |
 
-**Vibração:** feedback ao perder vida e ao concluir uma fase (banner de transição). No **macOS** a vibração pode ser fraca ou ausente dependendo do driver — teste o controle antes de apresentar.
+**Vibração:** feedback ao perder vida e ao concluir uma fase. No **macOS** a vibração pode ser fraca ou ausente.
 
-**Ranking:** entrada do nome continua apenas pelo teclado.
+**Ranking:** digitar o nome continua apenas pelo teclado; **B** ou ESC voltam ao menu.
+
+### Diagnóstico (controle não responde)
+
+```bash
+LOGICRUSH_INPUT_DEBUG=1 make run
+```
+
+Ou pressione **F12** no jogo. O overlay mostra se cada slot `pad[0..3]` está ativo e o nome do gamepad (ex.: `8BitDo Ultimate 2C`).
+
+**Checklist rápido**
+
+1. LED do controle fixo após parear no Mac.
+2. Debug mostra `pad[n]: yes` e nome do 8BitDo.
+3. Analógico direito move o cursor ciano no menu.
+4. **A** clica em “Iniciar”.
+5. No labirinto, o stick esquerdo move o personagem.
 
 ---
 

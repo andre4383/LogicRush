@@ -95,6 +95,7 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: $(TARGET)
+	@cp -f assets/gamecontrollerdb.txt ./gamecontrollerdb.txt 2>/dev/null || true
 	$(RUN_CMD)
 
 run_viewer: ranking_viewer$(_EXE)

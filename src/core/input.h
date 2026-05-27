@@ -18,8 +18,11 @@ bool Input_PressedGateTrue(void);
 bool Input_PressedGateFalse(void);
 
 bool Input_UsingGamepad(void);
+bool Input_IsConnected(void);
+const char *Input_GetGamepadName(void);
 
 void Input_DrawCursor(void);
+void Input_DrawDebug(void);
 
 void Input_NotifyDamage(void);
 void Input_NotifyPhaseWin(void);

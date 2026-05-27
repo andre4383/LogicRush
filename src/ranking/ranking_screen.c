@@ -5,6 +5,7 @@
  */
 #include "raylib.h"
 #include "../core/game.h"
+#include "../core/input.h"
 #include "../core/theme.h"
 #include "../core/screens.h"
 #include "../core/ranking.h"
@@ -114,8 +115,7 @@ void UpdateRankingScreen(void) {
         }
     }
 
-    // ESC goes back to title
-    if (IsKeyPressed(KEY_ESCAPE)) {
+    if (Input_PressedCancel()) {
         currentScreen = SCREEN_TITLE;
         return;
     }
