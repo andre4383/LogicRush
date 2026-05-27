@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include "rlgl.h"
 #include "game.h"
 #include "raymath.h"
 
@@ -8,17 +9,16 @@
 
 static int lastWinW = 0, lastWinH = 0;
 
-// Pre-transform mouse so GetMousePosition() returns virtual (1280x720) coords
+// Pre-transform mouse so GetMousePosition() returns virtual (1280x720) coords.
+// Uses logical pixels (GetScreenWidth) — correct because Raylib reports mouse
+// in logical coords regardless of HiDPI.
 static void UpdateMouseTransform(void) {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
     if (sw == lastWinW && sh == lastWinH) return;
     lastWinW = sw; lastWinH = sh;
 
-    float scaleX = (float)sw / (float)VIRTUAL_W;
-    float scaleY = (float)sh / (float)VIRTUAL_H;
-
-    SetMouseScale(1.0f / scaleX, 1.0f / scaleY);
+    SetMouseScale((float)VIRTUAL_W / (float)sw, (float)VIRTUAL_H / (float)sh);
     SetMouseOffset(0, 0);
 }
 
@@ -37,35 +37,25 @@ int main(void) {
 
     InitGame();
 
-    RenderTexture2D canvas = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
-    SetTextureFilter(canvas.texture, TEXTURE_FILTER_BILINEAR);
-
     while (!WindowShouldClose()) {
         UpdateMouseTransform();
         UpdateGame();
 
-        int sw = GetScreenWidth();
-        int sh = GetScreenHeight();
-
-        BeginTextureMode(canvas);
-        ClearBackground((Color){10, 12, 28, 255});
-        DrawGame();
-        EndTextureMode();
+        // GetRenderWidth/Height returns physical framebuffer pixels (HiDPI-aware).
+        // rlScalef maps virtual 1280x720 coords to fill the entire physical framebuffer
+        // with independent X/Y scale — no black bars, no texture downscale blur.
+        float scaleX = (float)GetRenderWidth()  / (float)VIRTUAL_W;
+        float scaleY = (float)GetRenderHeight() / (float)VIRTUAL_H;
 
         BeginDrawing();
         ClearBackground(BLACK);
-        DrawTexturePro(
-            canvas.texture,
-            (Rectangle){0.0f, 0.0f, (float)VIRTUAL_W, -(float)VIRTUAL_H},
-            (Rectangle){0.0f, 0.0f, (float)sw, (float)sh},
-            (Vector2){0.0f, 0.0f},
-            0.0f,
-            WHITE
-        );
+        rlPushMatrix();
+        rlScalef(scaleX, scaleY, 1.0f);
+        DrawGame();
+        rlPopMatrix();
         EndDrawing();
     }
 
-    UnloadRenderTexture(canvas);
     UnloadGame();
     CloseWindow();
     return 0;
