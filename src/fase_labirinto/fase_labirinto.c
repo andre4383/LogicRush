@@ -950,6 +950,11 @@ void UpdateGameplayScreen(void) {
                 errorCooldownTimer = 3.0f;
                 gateStreak         = 0;
                 gateComboWindow    = 0.0f;
+                globalLives--;
+                if (globalLives <= 0) {
+                    globalLives = 0;
+                    gameOver    = true;
+                }
             }
         }
         return;

@@ -118,8 +118,8 @@ void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const cha
         DrawCircle((int)(hx + 13), (int)(hy + 5), 5.5f, hCol);
         DrawTriangle(
             (Vector2){hx - 1.0f,        hy + 7.0f},
-            (Vector2){hx + 19.0f,       hy + 7.0f},
             (Vector2){hx + 9.0f,        hy + 19.0f},
+            (Vector2){hx + 19.0f,       hy + 7.0f},
             hCol);
         // Glow for active lives
         if (i < globalLives)

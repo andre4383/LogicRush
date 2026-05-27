@@ -17,12 +17,9 @@ static void UpdateMouseTransform(void) {
 
     float scaleX = (float)sw / (float)VIRTUAL_W;
     float scaleY = (float)sh / (float)VIRTUAL_H;
-    float scale  = (scaleX < scaleY) ? scaleX : scaleY;
-    float offX   = (sw - VIRTUAL_W * scale) * 0.5f;
-    float offY   = (sh - VIRTUAL_H * scale) * 0.5f;
 
-    SetMouseScale(1.0f / scale, 1.0f / scale);
-    SetMouseOffset((int)(-offX / scale), (int)(-offY / scale));
+    SetMouseScale(1.0f / scaleX, 1.0f / scaleY);
+    SetMouseOffset(0, 0);
 }
 
 int main(void) {
@@ -40,34 +37,35 @@ int main(void) {
 
     InitGame();
 
+    RenderTexture2D canvas = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
+    SetTextureFilter(canvas.texture, TEXTURE_FILTER_BILINEAR);
+
     while (!WindowShouldClose()) {
         UpdateMouseTransform();
         UpdateGame();
 
-        // Build a Camera2D that maps 1280x720 virtual coords → full window
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
-        float scaleX = (float)sw / (float)VIRTUAL_W;
-        float scaleY = (float)sh / (float)VIRTUAL_H;
-        float scale  = (scaleX < scaleY) ? scaleX : scaleY;
-        float offX   = (sw - VIRTUAL_W * scale) * 0.5f;
-        float offY   = (sh - VIRTUAL_H * scale) * 0.5f;
 
-        Camera2D cam = {
-            .offset   = { offX, offY },
-            .target   = { 0.0f, 0.0f },
-            .rotation = 0.0f,
-            .zoom     = scale
-        };
+        BeginTextureMode(canvas);
+        ClearBackground((Color){10, 12, 28, 255});
+        DrawGame();
+        EndTextureMode();
 
         BeginDrawing();
         ClearBackground(BLACK);
-        BeginMode2D(cam);
-        DrawGame();   // draws at virtual 1280x720 coords; HIGHDPI renders at native res
-        EndMode2D();
+        DrawTexturePro(
+            canvas.texture,
+            (Rectangle){0.0f, 0.0f, (float)VIRTUAL_W, -(float)VIRTUAL_H},
+            (Rectangle){0.0f, 0.0f, (float)sw, (float)sh},
+            (Vector2){0.0f, 0.0f},
+            0.0f,
+            WHITE
+        );
         EndDrawing();
     }
 
+    UnloadRenderTexture(canvas);
     UnloadGame();
     CloseWindow();
     return 0;

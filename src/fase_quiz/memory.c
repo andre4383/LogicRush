@@ -296,6 +296,13 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     mgState.correctStreak = 0;
                     mgState.comboTimer    = 0.0f;
 
+                    ctx->lives--;
+                    globalLives = ctx->lives;
+                    if (ctx->lives <= 0) {
+                        ctx->state = STATE_GAME_OVER;
+                        return;
+                    }
+
                     // Equal gets angrier (NOT damaged) when player misses
                     if (mgState.wrongStreak >= 3)
                     {
