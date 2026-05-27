@@ -42,7 +42,7 @@ ifeq ($(OS), Windows_NT)
     endif
 
     TARGET  = logic_rush.exe
-    RUN_CMD = $(TARGET)
+    RUN_CMD = ./$(TARGET)
 else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S), Darwin)
@@ -64,9 +64,13 @@ else
     RUN_CMD = ./$(TARGET)
 endif
 
+# Extensão do executável (deve ser definida ANTES das regras que a usam)
+_EXE = $(if $(filter Windows_NT,$(OS)),.exe,)
+
 # ── Fontes e Objetos ─────────────────────────────────────────────────────────────
 SRC = $(wildcard src/core/*.c)           \
       $(wildcard src/menu/*.c)           \
+      $(wildcard src/dialogue/*.c)       \
       $(wildcard src/fase_quiz/*.c)       \
       $(wildcard src/fase_labirinto/*.c) \
       $(wildcard src/fase_boss/*.c)       \
@@ -78,8 +82,6 @@ OBJ = $(SRC:.c=.o)
 
 # ── Regras ────────────────────────────────────────────────────────────────────────
 all: $(TARGET) ranking_viewer$(_EXE)
-
-_EXE = $(if $(filter Windows_NT,$(OS)),.exe,)
 
 ranking_viewer$(_EXE): src/ranking/ranking_viewer.o src/ranking_viewer/ranking_viewer_main.o
 	$(CC) src/ranking/ranking_viewer.o src/ranking_viewer/ranking_viewer_main.o -o $@ $(LDFLAGS)

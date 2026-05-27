@@ -1,61 +1,36 @@
 #include "raylib.h"
+#include "rlgl.h"
 #include "game.h"
 #include "raymath.h"
 
-// Virtual canvas dimensions (game logic always runs at this resolution)
+// Virtual canvas dimensions — all game logic and coordinates use this
 #define VIRTUAL_W SCREEN_WIDTH
 #define VIRTUAL_H SCREEN_HEIGHT
 
-static RenderTexture2D virtualTarget;
 static int lastWinW = 0, lastWinH = 0;
 
+// Pre-transform mouse so GetMousePosition() returns virtual (1280x720) coords.
+// With FLAG_WINDOW_HIGHDPI, Raylib reports mouse in physical (framebuffer) pixels,
+// so divide by GetRenderWidth/Height to stay consistent with rlScalef rendering.
 static void UpdateMouseTransform(void) {
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
     if (sw == lastWinW && sh == lastWinH) return;
     lastWinW = sw; lastWinH = sh;
 
-    float scaleX = (float)sw / (float)VIRTUAL_W;
-    float scaleY = (float)sh / (float)VIRTUAL_H;
-    float scale  = (scaleX < scaleY) ? scaleX : scaleY;
-    float offX   = (sw - VIRTUAL_W * scale) * 0.5f;
-    float offY   = (sh - VIRTUAL_H * scale) * 0.5f;
-
-    SetMouseScale(1.0f / scale, 1.0f / scale);
-    SetMouseOffset((int)(-offX / scale), (int)(-offY / scale));
-}
-
-static void DrawFinalToWindow(void) {
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-    float scaleX = (float)sw / (float)VIRTUAL_W;
-    float scaleY = (float)sh / (float)VIRTUAL_H;
-    float scale  = (scaleX < scaleY) ? scaleX : scaleY;
-    float offX   = (sw - VIRTUAL_W * scale) * 0.5f;
-    float offY   = (sh - VIRTUAL_H * scale) * 0.5f;
-
-    BeginDrawing();
-    ClearBackground(BLACK);
-
-    // Note: render texture is flipped vertically — use negative height in src rect
-    Rectangle src = { 0, 0, (float)VIRTUAL_W, -(float)VIRTUAL_H };
-    Rectangle dst = { offX, offY, VIRTUAL_W * scale, VIRTUAL_H * scale };
-    DrawTexturePro(virtualTarget.texture, src, dst, (Vector2){0,0}, 0.0f, WHITE);
-
-    EndDrawing();
+    SetMouseScale((float)VIRTUAL_W / (float)GetRenderWidth(), (float)VIRTUAL_H / (float)GetRenderHeight());
+    SetMouseOffset(0, 0);
 }
 
 int main(void) {
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
+    // FLAG_WINDOW_HIGHDPI: framebuffer uses native Retina/HiDPI resolution on macOS
+    // — rendering happens at full physical pixel density, eliminating blur from upscaling
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(VIRTUAL_W, VIRTUAL_H, "Logic Rush - Desafios de Logica Proposicional");
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
 
-    // Create virtual canvas
-    virtualTarget = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
-    SetTextureFilter(virtualTarget.texture, TEXTURE_FILTER_BILINEAR);
-
-    // Start fullscreen
+    // Start fullscreen at monitor native resolution
     int mon = GetCurrentMonitor();
     SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
     ToggleFullscreen();
@@ -66,16 +41,21 @@ int main(void) {
         UpdateMouseTransform();
         UpdateGame();
 
-        // Render game at virtual resolution
-        BeginTextureMode(virtualTarget);
-        DrawGame();   // already calls Clear inside DrawXScreen()
-        EndTextureMode();
+        // GetRenderWidth/Height returns physical framebuffer pixels (HiDPI-aware).
+        // rlScalef maps virtual 1280x720 coords to fill the entire physical framebuffer
+        // with independent X/Y scale — no black bars, no texture downscale blur.
+        float scaleX = (float)GetRenderWidth()  / (float)VIRTUAL_W;
+        float scaleY = (float)GetRenderHeight() / (float)VIRTUAL_H;
 
-        // Blit scaled to window
-        DrawFinalToWindow();
+        BeginDrawing();
+        ClearBackground(BLACK);
+        rlPushMatrix();
+        rlScalef(scaleX, scaleY, 1.0f);
+        DrawGame();
+        rlPopMatrix();
+        EndDrawing();
     }
 
-    UnloadRenderTexture(virtualTarget);
     UnloadGame();
     CloseWindow();
     return 0;
