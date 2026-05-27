@@ -9,6 +9,10 @@
 // ── Sprite textures for labirinto ────────────────────────────────────────────
 static Texture2D texPlayerLab = {0};
 static bool      texPlayerLabLoaded = false;
+
+static Texture2D texBossLab = {0};
+static bool      texBossLabLoaded = false;
+
 // Player uses frame 0 (idle) by default, frame 2 (block) near barriers
 #define PLB_COLS 2
 #define PLB_ROWS 2
@@ -19,6 +23,16 @@ static void EnsurePlayerLabTex(void) {
         if (texPlayerLab.id == 0)
             texPlayerLab = LoadTexture("assets/images/player_spritesheet.jpg");
         texPlayerLabLoaded = (texPlayerLab.id > 0);
+    }
+}
+
+static void EnsureBossLabTex(void) {
+    if (!texBossLabLoaded) {
+        texBossLab = LoadTexture("assets/images/boss.png");
+        if (texBossLab.id > 0) {
+            SetTextureFilter(texBossLab, TEXTURE_FILTER_POINT);
+            texBossLabLoaded = true;
+        }
     }
 }
 
@@ -46,31 +60,7 @@ static void DrawPlayerLabSprite(float px, float py, float radius, float t, bool 
     DrawCircleLines((int)px,(int)py,(int)(radius+3), ColorAlpha(COLOR_NEON_CYAN,0.4f));
 }
 
-static void DrawVirusEnemy(float ex, float ey, float radius, float t) {
-    // Virus: spiky red/purple pulsing blob
-    float pulse = 1.0f + sinf(t * 8.0f) * 0.15f;
-    float r     = radius * pulse;
-    DrawCircle((int)ex,(int)ey,(int)(r+6), ColorAlpha(COLOR_NEON_RED,0.12f));
-    DrawCircle((int)ex,(int)ey,(int)r,     ColorAlpha(COLOR_NEON_RED,0.75f));
-    DrawCircleLines((int)ex,(int)ey,(int)r, COLOR_NEON_RED);
-    // Spikes
-    for (int i = 0; i < 8; i++) {
-        float ang  = (float)i * 0.7854f + t * 3.0f;
-        float spkR = r + 8.0f + sinf(t*12.0f + i)*3.0f;
-        DrawLineEx(
-            (Vector2){ex + cosf(ang)*(r-2), ey + sinf(ang)*(r-2)},
-            (Vector2){ex + cosf(ang)*spkR,  ey + sinf(ang)*spkR},
-            2.5f, ColorAlpha(COLOR_NEON_RED, 0.8f));
-        DrawCircle((int)(ex+cosf(ang)*spkR),(int)(ey+sinf(ang)*spkR),
-                   3, ColorAlpha((Color){200,0,50,255},0.9f));
-    }
-    // Eyes
-    float eyeOff = r * 0.3f;
-    DrawCircle((int)(ex-eyeOff*0.5f),(int)(ey-eyeOff*0.4f),4,WHITE);
-    DrawCircle((int)(ex+eyeOff*0.5f),(int)(ey-eyeOff*0.4f),4,WHITE);
-    DrawCircle((int)(ex-eyeOff*0.5f+1),(int)(ey-eyeOff*0.4f+1),2,(Color){255,0,0,255});
-    DrawCircle((int)(ex+eyeOff*0.5f+1),(int)(ey-eyeOff*0.4f+1),2,(Color){255,0,0,255});
-}
+
 
 
 #define COLS 32
@@ -1132,20 +1122,21 @@ void DrawGameplayScreen(void) {
         // Aura
         DrawCircle(enemyPos.x, enemyPos.y, glowRadius, ColorAlpha(COLOR_NEON_RED, 0.25f));
         
-        // Inner spiked glitch triangles
-        for (int i = 0; i < 4; i++) {
-            float angle = virusTime * 5.0f + i * (PI / 2.0f);
-            float gl = 4.0f + sinf(virusTime * 30.0f + i) * 3.0f;
-            Vector2 p1 = { enemyPos.x + cosf(angle) * (enemyRadius + gl), enemyPos.y + sinf(angle) * (enemyRadius + gl) };
-            Vector2 p2 = { enemyPos.x + cosf(angle + 0.3f) * (enemyRadius - 4.0f), enemyPos.y + sinf(angle + 0.3f) * (enemyRadius - 4.0f) };
-            Vector2 p3 = { enemyPos.x + cosf(angle - 0.3f) * (enemyRadius - 4.0f), enemyPos.y + sinf(angle - 0.3f) * (enemyRadius - 4.0f) };
-            DrawTriangle(p1, p2, p3, COLOR_NEON_RED);
-        }
-        
-        // Core center
+        // Esfera vermelha original (por baixo)
         DrawCircleV(enemyPos, enemyRadius - 2.0f, COLOR_NEON_RED);
         DrawCircleV(enemyPos, enemyRadius - 6.0f, BLACK);
         DrawCircleV(enemyPos, 3.0f, WHITE);
+        
+        // Draw boss.png sprite with nearest neighbor scaling
+        EnsureBossLabTex();
+        if (texBossLabLoaded) {
+            float destWidth = enemyRadius * 3.5f; 
+            float destHeight = ((float)texBossLab.height / (float)texBossLab.width) * destWidth;
+            Rectangle source = {0, 0, (float)texBossLab.width, (float)texBossLab.height};
+            Rectangle dest = {enemyPos.x, enemyPos.y, destWidth, destHeight};
+            Vector2 origin = {destWidth / 2.0f, destHeight / 2.0f};
+            DrawTexturePro(texBossLab, source, dest, origin, 0.0f, WHITE);
+        }
     }
     
     // Ambient vignette corners (vignette overlay for cinematic feel)
@@ -1356,5 +1347,6 @@ void DrawGameplayScreen(void) {
 
 void UnloadGameplayScreen(void) {
     if (texPlayerLabLoaded) { UnloadTexture(texPlayerLab); texPlayerLabLoaded=false; }
+    if (texBossLabLoaded) { UnloadTexture(texBossLab); texBossLabLoaded=false; }
     // Clean up
 }
