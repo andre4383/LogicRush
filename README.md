@@ -90,7 +90,7 @@ set RAYLIB_PATH=D:\libs\raylib && make run
 ```
 
 ## A equipe
-### PROGRAMADOREES 
+### PROGRAMADORES 
 - Afonso Araujo 
 - Lucas Gabriel 
 - André Montenegro
