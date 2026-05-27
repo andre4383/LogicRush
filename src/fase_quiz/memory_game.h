@@ -31,6 +31,7 @@ typedef struct {
     float      x, y;     // centre position
     float      width, height;
     bool       selected;
+    float      matchSmokeTimer;
 } Card;
 
 // ─── Memory game state ─────────────────────────────────────────────────────
@@ -59,6 +60,8 @@ typedef struct {
     int     wrongStreak;   // equal gets angrier with wrong streaks
     float   wrongFlashT;   // white flash on wrong match
     float   correctFlashT;
+    float   playTimeLeft;
+    float   playTimeMax;
 } MemoryGameState;
 
 extern MemoryGameState mgState;
