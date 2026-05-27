@@ -87,7 +87,7 @@ void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const cha
     // Left: Game name & active phase
     char titleText[128];
     if (phaseSubtitle && phaseSubtitle[0] != '\0') {
-        sprintf(titleText, "LOGIC RUSH: %s — %s", phaseTitle, phaseSubtitle);
+        sprintf(titleText, "LOGIC RUSH: %s | %s", phaseTitle, phaseSubtitle);
     } else {
         sprintf(titleText, "LOGIC RUSH: %s", phaseTitle);
     }

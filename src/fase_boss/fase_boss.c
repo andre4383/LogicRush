@@ -183,14 +183,14 @@ static const Proposition PROPOSITIONS[] = {
       "Selecione a forma expandida equivalente:",
       {"(P^Q)v(~P^~Q)", "P->Q", "P^Q", "~P^~Q"},
       4, 3, {34,  197, 94,  255} },
-    { "P ^ (Q v R)",
-      "Aplique a distributividade:",
-      {"(P^Q) v (P^R)", "(PvQ) ^ (PvR)", "P v (Q^R)", "P^Q^R"},
-      4, 3, {168, 85,  247, 255} },
-    { "(P v Q) ^ (P v R)",
-      "Aplique a distributividade:",
-      {"P v (Q ^ R)", "(P^Q) v (P^R)", "P ^ (Q v R)", "P v Q v R"},
-      4, 3, {234, 179, 8,   255} },
+    { "P ^ Q",
+      "Selecione a forma equivalente (comutatividade):",
+      {"Q ^ P", "P v Q", "~P ^ ~Q", "P -> Q"},
+      3, 3, {168, 85,  247, 255} },
+    { "P v Q",
+      "Selecione a forma equivalente (comutatividade):",
+      {"Q v P", "P ^ Q", "~P v ~Q", "P -> Q"},
+      3, 3, {234, 179, 8,   255} },
     { "P v ~P",
       "Esta proposicao e classificada como:",
       {"Tautologia", "Contradicao", "Contingencia", "Indefinida"},
@@ -717,11 +717,16 @@ static void SpawnCube(void) {
     if (slot < 0) return;
 
     // Seleciona proposição
+    // No estágio 3, intercala 50% V/F (estágio 2) para aliviar a dificuldade
+    int targetStage = boss.currentStage;
+    if (boss.currentStage == 3 && (RandRange(0, 2) == 0)) {
+        targetStage = 2;
+    }
     int idx = -1;
     int attempts = 0;
     while (attempts < 200) {
         int candidate = RandRange(0, TOTAL_PROPOSITIONS);
-        if (PROPOSITIONS[candidate].stage != boss.currentStage) { attempts++; continue; }
+        if (PROPOSITIONS[candidate].stage != targetStage) { attempts++; continue; }
         int repeated = 0;
         for (int r = 0; r < 5; r++) {
             if (recentProps[r] == candidate) { repeated = 1; break; }
@@ -731,7 +736,7 @@ static void SpawnCube(void) {
     }
     if (idx < 0) {
         for (int i = 0; i < TOTAL_PROPOSITIONS; i++) {
-            if (PROPOSITIONS[i].stage == boss.currentStage) { idx = i; break; }
+            if (PROPOSITIONS[i].stage == targetStage) { idx = i; break; }
         }
     }
 
