@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include "rlgl.h"
 #include "game.h"
+#include "input.h"
 #include "raymath.h"
 
 // Virtual canvas dimensions — all game logic and coordinates use this
@@ -35,10 +36,12 @@ int main(void) {
     SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
     ToggleFullscreen();
 
+    Input_Init();
     InitGame();
 
     while (!WindowShouldClose()) {
         UpdateMouseTransform();
+        Input_Update(GetFrameTime());
         UpdateGame();
 
         // GetRenderWidth/Height returns physical framebuffer pixels (HiDPI-aware).

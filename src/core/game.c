@@ -1,4 +1,5 @@
 #include "game.h"
+#include "input.h"
 #include "screens.h"
 #include "theme.h"
 #include "../fase_quiz/game.h"
@@ -29,6 +30,7 @@ void StartPhaseBanner(const char* title, const char* subtitle) {
     phaseBannerTimer = 3.0f;
     phaseBannerTitle = title;
     phaseBannerSubtitle = subtitle;
+    Input_NotifyPhaseWin();
 }
 
 void UpdatePhaseBanner(float dt) {
@@ -163,7 +165,7 @@ void UpdateQuizScreen(void) {
     }
     
     if (quizCtx.state != STATE_GAME_OVER) {
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (Input_PressedCancel()) {
             gamePaused = true;
             return;
         }
@@ -173,25 +175,25 @@ void UpdateQuizScreen(void) {
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
-        Vector2 mousePos = GetMousePosition();
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (CheckCollisionPointRec(mousePos, btnRestart)) {
+        Vector2 ptr = Input_GetPointer();
+        if (Input_PointerPressed()) {
+            if (CheckCollisionPointRec(ptr, btnRestart)) {
                 globalScore = 0;
                 globalTimer = 0.0f;
                 globalLives = 3;
                 InitQuizScreen();
             }
-            if (CheckCollisionPointRec(mousePos, btnMenu)) {
+            if (CheckCollisionPointRec(ptr, btnMenu)) {
                 currentScreen = SCREEN_TITLE;
             }
         }
-        if (IsKeyPressed(KEY_SPACE)) {
+        if (Input_PressedConfirm()) {
             globalScore = 0;
             globalTimer = 0.0f;
             globalLives = 3;
             InitQuizScreen();
         }
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (Input_PressedCancel()) {
             currentScreen = SCREEN_TITLE;
         }
         return;
@@ -230,9 +232,9 @@ void DrawQuizScreen(void) {
     
     DrawUnifiedHUD("FASE 1: QUIZ", "EQUIVALÊNCIAS", NULL);
 #ifdef __APPLE__
-    DrawBottomHUD("ESC: Pausar  |  Clique nas cartas para combinar  |  Ctrl+F: Fullscreen");
+    DrawBottomHUD("ESC/B: Pausar  |  Mouse ou analógico direito + A nas cartas  |  Ctrl+F: Fullscreen");
 #else
-    DrawBottomHUD("ESC: Pausar  |  Clique nas cartas para combinar  |  F11: Fullscreen");
+    DrawBottomHUD("ESC/B: Pausar  |  Mouse ou analógico direito + A nas cartas  |  F11: Fullscreen");
 #endif
     
     // Draw Game Over overlay if needed
@@ -258,13 +260,15 @@ void DrawQuizScreen(void) {
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
         
-        Vector2 mousePos = GetMousePosition();
-        bool hoveredRestart = CheckCollisionPointRec(mousePos, btnRestart);
-        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+        Vector2 ptr = Input_GetPointer();
+        bool hoveredRestart = CheckCollisionPointRec(ptr, btnRestart);
+        bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
         
-        DrawThemeButton(btnRestart, "REINICIAR (ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
-        DrawThemeButton(btnMenu, "MENU (ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
+        DrawThemeButton(btnRestart, "REINICIAR (A/ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
+        DrawThemeButton(btnMenu, "MENU (B/ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
+
+    Input_DrawCursor();
     
     // Draw Phase Banner overlay on top
     DrawPhaseBanner();
@@ -342,11 +346,11 @@ void DrawPauseOverlay(void) {
     Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
     Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
     
-    Vector2 mousePos = GetMousePosition();
-    bool hoveredResume = CheckCollisionPointRec(mousePos, btnResume);
-    bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+    Vector2 ptr = Input_GetPointer();
+    bool hoveredResume = CheckCollisionPointRec(ptr, btnResume);
+    bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
     
-    DrawThemeButton(btnResume, "RETOMAR (ESC)", 14, hoveredResume, COLOR_NEON_GREEN);
+    DrawThemeButton(btnResume, "RETOMAR (ESC/B)", 14, hoveredResume, COLOR_NEON_GREEN);
     DrawThemeButton(btnMenu, "SAIR PARA O MENU", 14, hoveredMenu, COLOR_NEON_RED);
 }
 
@@ -359,7 +363,7 @@ void UpdateGame(void) {
 #endif
 
     if (gamePaused) {
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (Input_PressedCancel()) {
             gamePaused = false;
             return;
         }
@@ -368,12 +372,12 @@ void UpdateGame(void) {
         Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
         
-        Vector2 mousePos = GetMousePosition();
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (CheckCollisionPointRec(mousePos, btnResume)) {
+        Vector2 ptr = Input_GetPointer();
+        if (Input_PointerPressed()) {
+            if (CheckCollisionPointRec(ptr, btnResume)) {
                 gamePaused = false;
             }
-            else if (CheckCollisionPointRec(mousePos, btnMenu)) {
+            else if (CheckCollisionPointRec(ptr, btnMenu)) {
                 gamePaused = false;
                 currentScreen = SCREEN_TITLE;
             }
@@ -428,6 +432,7 @@ void DrawGame(void) {
 
     if (gamePaused) {
         DrawPauseOverlay();
+        Input_DrawCursor();
     }
 }
 

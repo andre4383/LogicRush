@@ -11,6 +11,7 @@
 
 #include "raylib.h"
 #include "../core/game.h"
+#include "../core/input.h"
 #include "../core/ranking.h"
 #include "../core/theme.h"
 #include <stddef.h>
@@ -823,6 +824,7 @@ static void ApplyAnswer(int cubeIdx, int chosenOption) {
             boss.bossHP     = 0;
             boss.phase      = BPHASE_VICTORY;
             boss.shakeTimer = 1.0f;
+            Input_NotifyPhaseWin();
         } else {
             boss.phase      = BPHASE_BOSS_HIT;
             boss.phaseTimer = 0.4f;
@@ -832,6 +834,7 @@ static void ApplyAnswer(int cubeIdx, int chosenOption) {
         boss.playerHP -= PLAYER_DAMAGE;
         globalLives = boss.playerHP;  // sync
         playerHitTimer = 0.45f;
+        Input_NotifyDamage();
         if (boss.playerHP <= 0) {
             boss.playerHP = 0;
             globalLives   = 0;
@@ -856,6 +859,7 @@ static void ApplyTimeout(int cubeIdx) {
     boss.playerHP -= PLAYER_DAMAGE;
     globalLives = boss.playerHP;  // sync
     playerHitTimer = 0.45f;
+    Input_NotifyDamage();
     if (boss.playerHP <= 0) {
         boss.playerHP = 0;
         globalLives   = 0;
@@ -875,7 +879,7 @@ void UpdateBossScreen(void) {
         return;
     }
 
-    if (IsKeyPressed(KEY_ESCAPE)) {
+    if (Input_PressedCancel()) {
         if (boss.phase != BPHASE_VICTORY && boss.phase != BPHASE_DEFEAT)
             gamePaused = true;
         else
@@ -902,7 +906,7 @@ void UpdateBossScreen(void) {
             Ranking_ScreenEnter(globalScore, globalTimer, 3);
             currentScreen = SCREEN_RANKING;
         }
-        if (IsKeyPressed(KEY_ENTER)) { rankingTriggered=false; currentScreen = SCREEN_TITLE; }
+        if (Input_PressedConfirm()) { rankingTriggered=false; currentScreen = SCREEN_TITLE; }
         return;
     }
     if (boss.phase == BPHASE_DEFEAT) {
@@ -912,7 +916,7 @@ void UpdateBossScreen(void) {
             Ranking_ScreenEnter(globalScore, globalTimer, 3);
             currentScreen = SCREEN_RANKING;
         }
-        if (IsKeyPressed(KEY_ENTER)) { rankingTrigD=false; currentScreen = SCREEN_TITLE; }
+        if (Input_PressedConfirm()) { rankingTrigD=false; currentScreen = SCREEN_TITLE; }
         return;
     }
 
@@ -970,15 +974,15 @@ void UpdateBossScreen(void) {
     }
 
     // Input
-    Vector2 mouse = GetMousePosition();
+    Vector2 ptr = Input_GetPointer();
     hoveredCard = -1;
     int acceptInput = (boss.phase == BPHASE_FIGHTING);
 
     if (acceptInput && selectedCube >= 0 && numActiveCards > 0) {
         for (int i = 0; i < numActiveCards; i++) {
-            if (CheckCollisionPointRec(mouse, answerCards[i])) {
+            if (CheckCollisionPointRec(ptr, answerCards[i])) {
                 hoveredCard = i;
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                if (Input_PointerPressed()) {
                     ApplyAnswer(selectedCube, i);
                     break;
                 }
@@ -1391,12 +1395,12 @@ void DrawBossScreen(void) {
                           (boss.currentStage == 2) ? "ESTAGIO 2: AVANCADO"  :
                                                      "ESTAGIO 3: CRITICO!";
     DrawUnifiedHUD("FASE 3: BOSS FIGHT", stgStr,
-                   "Clique com o MOUSE nas respostas para rebater os ataques");
+                   "Analógico direito + A ou mouse nas respostas");
 
     {
         const char *hint = (selectedCube >= 0 && feedbackTimer <= 0.0f)
-            ? "Mouse: Clicar na resposta  |  Responda antes do tempo!  |  ESC: Pausar"
-            : "Aguarde o proximo cubo...  |  ESC: Pausar";
+            ? "Analógico dir.+A ou mouse na resposta  |  ESC/B: Pausar"
+            : "Aguarde o proximo cubo...  |  ESC/B: Pausar";
         DrawBottomHUD(hint);
     }
 
@@ -1410,9 +1414,9 @@ void DrawBossScreen(void) {
         const char *it = "M E E T I N G   E Q U A L";
         DrawText(it, SCREEN_WIDTH/2-MeasureText(it,40)/2, SCREEN_HEIGHT/2-35, 40,
                  ColorAlpha(COLOR_NEON_CYAN, 0.6f + sinf(t*3.5f)*0.3f));
-        const char *is = "Clique na equivalencia logica correta para repelir os cubos!";
+        const char *is = "Selecione a equivalencia correta para repelir os cubos!";
         DrawText(is, SCREEN_WIDTH/2-MeasureText(is,16)/2, SCREEN_HEIGHT/2+22, 16, COLOR_TEXT_MUTED);
-        const char *is2 = "O cursor do mouse e sua unica arma.";
+        const char *is2 = "Mouse ou analógico direito + botão A.";
         DrawText(is2, SCREEN_WIDTH/2-MeasureText(is2,15)/2, SCREEN_HEIGHT/2+48, 15,
                  ColorAlpha(COLOR_TEXT_MUTED,0.65f));
     }
@@ -1444,5 +1448,6 @@ void DrawBossScreen(void) {
         }
     }
 
+    Input_DrawCursor();
     DrawPhaseBanner();
 }

@@ -1,4 +1,5 @@
 #include "../core/game.h"
+#include "../core/input.h"
 #include "../core/ranking.h"
 #include "../core/screens.h"
 #include "../core/theme.h"
@@ -730,6 +731,7 @@ static void UpdateEnemy(float dt) {
         if (distToPlayer < (enemyRadius + playerRadius)) {
             gameOver = true;
             globalLives = 0;  // sync global lives
+            Input_NotifyDamage();
         }
     }
 }
@@ -741,14 +743,14 @@ void UpdateGameplayScreen(void) {
     }
     
     if (!gameWon && !gameOver) {
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (Input_PressedCancel()) {
             gamePaused = true;
             return;
         }
     }
     
     if (gameWon) {
-        if (IsKeyPressed(KEY_SPACE)) {
+        if (Input_PressedConfirm()) {
             if (currentLevelIdx < MAX_LEVELS - 1) {
                 currentLevelIdx++;
                 ResetLevel();
@@ -759,18 +761,17 @@ void UpdateGameplayScreen(void) {
             }
             return;
         }
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (Input_PressedCancel()) {
             currentScreen = SCREEN_TITLE;
             return;
         }
         
-        // Mouse click detection
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
-        Vector2 mousePos = GetMousePosition();
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (CheckCollisionPointRec(mousePos, btnNext)) {
+        Vector2 ptr = Input_GetPointer();
+        if (Input_PointerPressed()) {
+            if (CheckCollisionPointRec(ptr, btnNext)) {
                 if (currentLevelIdx < MAX_LEVELS - 1) {
                     currentLevelIdx++;
                     ResetLevel();
@@ -781,7 +782,7 @@ void UpdateGameplayScreen(void) {
                 }
                 return;
             }
-            if (CheckCollisionPointRec(mousePos, btnMenu)) {
+            if (CheckCollisionPointRec(ptr, btnMenu)) {
                 currentScreen = SCREEN_TITLE;
                 return;
             }
@@ -797,27 +798,26 @@ void UpdateGameplayScreen(void) {
             currentScreen = SCREEN_RANKING;
             return;
         }
-        if (IsKeyPressed(KEY_SPACE)) {
+        if (Input_PressedConfirm()) {
             rankingTrigLab = false;
             ResetLevel();
             return;
         }
-        if (IsKeyPressed(KEY_ESCAPE)) {
+        if (Input_PressedCancel()) {
             currentScreen = SCREEN_TITLE;
             return;
         }
         
-        // Mouse interaction for Game Over
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
-        Vector2 mousePos = GetMousePosition();
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if (CheckCollisionPointRec(mousePos, btnRestart)) {
+        Vector2 ptr = Input_GetPointer();
+        if (Input_PointerPressed()) {
+            if (CheckCollisionPointRec(ptr, btnRestart)) {
                 ResetLevel();
                 return;
             }
-            if (CheckCollisionPointRec(mousePos, btnMenu)) {
+            if (CheckCollisionPointRec(ptr, btnMenu)) {
                 currentScreen = SCREEN_TITLE;
                 return;
             }
@@ -826,14 +826,13 @@ void UpdateGameplayScreen(void) {
     }
     
     if (isIntroActive) {
-        if (IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)) {
+        if (Input_PressedConfirm()) {
             isIntroActive = false;
         }
         
-        // Check for glass panel button click
         Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f + 165, 200, 45 };
-        Vector2 mousePos = GetMousePosition();
-        if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        Vector2 ptr = Input_GetPointer();
+        if (CheckCollisionPointRec(ptr, btnRect) && Input_PointerPressed()) {
             isIntroActive = false;
         }
         return;
@@ -893,9 +892,9 @@ void UpdateGameplayScreen(void) {
         Rectangle btnV = { SCREEN_WIDTH / 2.0f - 140, challengeRect.y + 180, 120, 50 };
         Rectangle btnF = { SCREEN_WIDTH / 2.0f + 20, challengeRect.y + 180, 120, 50 };
         
-        Vector2 mousePos = GetMousePosition();
-        bool hoveredV = CheckCollisionPointRec(mousePos, btnV);
-        bool hoveredF = CheckCollisionPointRec(mousePos, btnF);
+        Vector2 ptr = Input_GetPointer();
+        bool hoveredV = CheckCollisionPointRec(ptr, btnV);
+        bool hoveredF = CheckCollisionPointRec(ptr, btnF);
         
         bool choseTrue = false;
         bool choseFalse = false;
@@ -911,11 +910,11 @@ void UpdateGameplayScreen(void) {
             }
         }
 
-        if (IsKeyPressed(KEY_V)) choseTrue = true;
-        if (IsKeyPressed(KEY_F)) choseFalse = true;
+        if (Input_PressedGateTrue()) choseTrue = true;
+        if (Input_PressedGateFalse()) choseFalse = true;
 
-        if (hoveredV && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseTrue = true;
-        if (hoveredF && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseFalse = true;
+        if (hoveredV && Input_PointerPressed()) choseTrue = true;
+        if (hoveredF && Input_PointerPressed()) choseFalse = true;
 
         if (choseTrue || choseFalse) {
             bool answer = choseTrue;
@@ -941,6 +940,7 @@ void UpdateGameplayScreen(void) {
                     if (globalLives < 3) {
                         globalLives++;
                         gateComboFeedbackTimer = 1.8f;
+                        Input_NotifyComboLife();
                     }
                     gateStreak      = 0;
                     gateComboWindow = 0.0f;
@@ -951,6 +951,7 @@ void UpdateGameplayScreen(void) {
                 gateStreak         = 0;
                 gateComboWindow    = 0.0f;
                 globalLives--;
+                Input_NotifyDamage();
                 if (globalLives <= 0) {
                     globalLives = 0;
                     gameOver    = true;
@@ -985,14 +986,9 @@ void UpdateGameplayScreen(void) {
         globalPulseDir = 1;
     }
     
-    // Movement inputs
-    float dx = 0.0f;
-    float dy = 0.0f;
-    
-    if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP)) dy -= playerSpeed * dt;
-    if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) dy += playerSpeed * dt;
-    if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) dx -= playerSpeed * dt;
-    if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) dx += playerSpeed * dt;
+    Vector2 move = Input_GetMove();
+    float dx = move.x * playerSpeed * dt;
+    float dy = move.y * playerSpeed * dt;
     
     // Slide along X-axis
     float nextX = playerPos.x + dx;
@@ -1220,9 +1216,9 @@ void DrawGameplayScreen(void) {
 
     // Bottom command bar
 #ifdef __APPLE__
-    DrawBottomHUD("WASD / Setas: Mover  |  V: Verdadeiro  |  F: Falso  |  ESC: Pausar  |  Ctrl+F: Fullscreen");
+    DrawBottomHUD("Stick esq./WASD: Mover  |  Y/V: Verdadeiro  X/F: Falso  |  Analógico dir.+A  |  ESC/B: Pausar  |  Ctrl+F");
 #else
-    DrawBottomHUD("WASD / Setas: Mover  |  V: Verdadeiro  |  F: Falso  |  ESC: Pausar  |  F11: Fullscreen");
+    DrawBottomHUD("Stick esq./WASD: Mover  |  Y/V: Verdadeiro  X/F: Falso  |  Analógico dir.+A  |  ESC/B: Pausar  |  F11");
 #endif
 
     // Combo life-gain feedback
@@ -1284,8 +1280,8 @@ void DrawGameplayScreen(void) {
         
         // Button
         Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, popupRect.y + 390, 200, 45 };
-        Vector2 mousePos = GetMousePosition();
-        bool hovered = CheckCollisionPointRec(mousePos, btnRect);
+        Vector2 ptr = Input_GetPointer();
+        bool hovered = CheckCollisionPointRec(ptr, btnRect);
         
         DrawThemeButton(btnRect, "ENTENDIDO", 16, hovered, COLOR_NEON_GREEN);
     }
@@ -1348,9 +1344,9 @@ void DrawGameplayScreen(void) {
             Rectangle btnV = { SCREEN_WIDTH / 2.0f - 140, challengeRect.y + 180, 120, 50 };
             Rectangle btnF = { SCREEN_WIDTH / 2.0f + 20, challengeRect.y + 180, 120, 50 };
             
-            Vector2 mousePos = GetMousePosition();
-            bool hoveredV = CheckCollisionPointRec(mousePos, btnV);
-            bool hoveredF = CheckCollisionPointRec(mousePos, btnF);
+            Vector2 ptr = Input_GetPointer();
+            bool hoveredV = CheckCollisionPointRec(ptr, btnV);
+            bool hoveredF = CheckCollisionPointRec(ptr, btnF);
             
             DrawThemeButton(btnV, "VERDADEIRO (V)", 14, hoveredV, COLOR_NEON_GREEN);
             DrawThemeButton(btnF, "FALSO (F)", 14, hoveredF, COLOR_NEON_RED);
@@ -1385,12 +1381,12 @@ void DrawGameplayScreen(void) {
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
         
-        Vector2 mousePos = GetMousePosition();
-        bool hoveredRestart = CheckCollisionPointRec(mousePos, btnRestart);
-        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+        Vector2 ptr = Input_GetPointer();
+        bool hoveredRestart = CheckCollisionPointRec(ptr, btnRestart);
+        bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
         
-        DrawThemeButton(btnRestart, "REINICIAR (ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
-        DrawThemeButton(btnMenu, "MENU (ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
+        DrawThemeButton(btnRestart, "REINICIAR (A/ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
+        DrawThemeButton(btnMenu, "MENU (B/ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
     
     // Draw Win Screen Overlay
@@ -1415,14 +1411,16 @@ void DrawGameplayScreen(void) {
         Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
         
-        Vector2 mousePos = GetMousePosition();
-        bool hoveredNext = CheckCollisionPointRec(mousePos, btnNext);
-        bool hoveredMenu = CheckCollisionPointRec(mousePos, btnMenu);
+        Vector2 ptr = Input_GetPointer();
+        bool hoveredNext = CheckCollisionPointRec(ptr, btnNext);
+        bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
         
-        const char* btnNextLabel = isLastLevel ? "ENFRENTAR BOSS (ESP)" : "AVANCAR (ESP)";
+        const char* btnNextLabel = isLastLevel ? "ENFRENTAR BOSS (A/ESP)" : "AVANCAR (A/ESP)";
         DrawThemeButton(btnNext, btnNextLabel, 12, hoveredNext, COLOR_NEON_GREEN);
-        DrawThemeButton(btnMenu, "MENU (ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
+        DrawThemeButton(btnMenu, "MENU (B/ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
+
+    Input_DrawCursor();
     
     DrawPhaseBanner();
 }

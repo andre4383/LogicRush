@@ -74,6 +74,25 @@ make run_viewer   # compila e abre só o viewer
 
 ---
 
+## Controle (Gamepad 8BitDo)
+
+O jogo aceita **teclado + mouse** e **gamepad** (layout Xbox — use o 8BitDo em **modo X**).
+
+| Ação | Teclado / mouse | Gamepad (modo X) |
+|------|-----------------|------------------|
+| Mover (labirinto) | WASD / setas | Analógico esquerdo ou D-pad |
+| Cursor (menu, cartas, boss) | Mouse | Analógico direito |
+| Selecionar / confirmar | Clique / Enter / Espaço | **A** |
+| Voltar / pausar | ESC | **B** ou Start |
+| Portão Verdadeiro | V | **Y** |
+| Portão Falso | F | **X** |
+
+**Vibração:** feedback ao perder vida e ao concluir uma fase (banner de transição). No **macOS** a vibração pode ser fraca ou ausente dependendo do driver — teste o controle antes de apresentar.
+
+**Ranking:** entrada do nome continua apenas pelo teclado.
+
+---
+
 ## Como Rodar
 
 ### macOS

@@ -10,6 +10,7 @@
 
 #include "raylib.h"
 #include "game.h"
+#include "../core/input.h"
 #include "memory_game.h"
 #include <stdlib.h>
 #include <math.h>
@@ -237,9 +238,9 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
         // ── Player input ─────────────────────────────────────────────
         case MG_PHASE_PLAY:
         {
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            if (Input_PointerPressed())
             {
-                Vector2 mp = GetMousePosition();
+                Vector2 mp = Input_GetPointer();
                 for (int i = 0; i < mgState.cardCount; i++)
                 {
                     Card *c = &mgState.cards[i];
@@ -300,6 +301,7 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                             ctx->lives++;
                             globalLives = ctx->lives;
                             mgState.comboFeedbackTimer = 1.8f;
+                            Input_NotifyComboLife();
                         }
                         mgState.correctStreak = 0;
                         mgState.comboTimer    = 0.0f;
@@ -319,6 +321,7 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
 
                     ctx->lives--;
                     globalLives = ctx->lives;
+                    Input_NotifyDamage();
                     if (ctx->lives <= 0) {
                         ctx->state = STATE_GAME_OVER;
                         return;
@@ -397,6 +400,7 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                 {
                     ctx->lives--;
                     globalLives = ctx->lives;  // sync global
+                    Input_NotifyDamage();
                     if (ctx->lives <= 0)
                         ctx->state = STATE_GAME_OVER;
                     else
