@@ -293,7 +293,16 @@ void InitGame(void) {
         0x00D4, 0x00F4, // Ô, ô
         0x00D5, 0x00F5, // Õ, õ
         0x00DA, 0x00FA, // Ú, ú
-        0x00C7, 0x00E7  // Ç, ç
+        0x00C7, 0x00E7, // Ç, ç
+        0x2261, // ≡
+        0x2192, // →
+        0x2194, // ↔
+        0x2295, // ⊕
+        0x2191, // ↑
+        0x2193, // ↓
+        0x00AC, // ¬
+        0x2227, // ∧
+        0x2228  // ∨
     };
     for (int i = 0; i < (int)(sizeof(pt_chars)/sizeof(pt_chars[0])); i++) {
         codepoints[count++] = pt_chars[i];

@@ -213,6 +213,19 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
         }
     }
 
+    if (mgState.phase == MG_PHASE_PLAY || mgState.phase == MG_PHASE_CHECK) {
+        mgState.playTimeLeft -= dt;
+        if (mgState.playTimeLeft <= 0.0f && !mgState.passed) {
+            mgState.playTimeLeft = 0.0f;
+            mgState.passed     = false;
+            mgState.phase      = MG_PHASE_RESULT;
+            mgState.phaseTimer = 2.5f;
+            ctx->mood      = EQUAL_GLITCH;
+            ctx->moodTimer = 2.5f;
+            return;
+        }
+    }
+
     switch (mgState.phase)
     {
         // ── Show all cards for a moment ──────────────────────────────
@@ -472,7 +485,6 @@ static void DrawCard(Card *c, bool showFace, float flashCorrect, float flashWron
         DrawLineEx((Vector2){r.x+r.width*0.5f, r.y+r.height*0.6f},
                    (Vector2){r.x+r.width*0.6f, r.y+r.height*0.3f},
                    2.0f, (Color){5, 0, 0, 255});
-
         // Smoke and sparks only happen briefly after a match
         if (c->matchSmokeTimer > 0) {
             float st = 1.0f - c->matchSmokeTimer; // 0.0 to 1.0 progress
@@ -590,6 +602,35 @@ void MemoryGame_Draw(GameCtx *ctx)
         int barHeight = 14;
         int barX = SCREEN_W / 2 - barWidth / 2;
         int barY = 97;
+        DrawRectangle(barX, barY, barWidth, barHeight, ColorAlpha(COL_DIM, 0.5f));
+        DrawRectangle(barX, barY, (int)(barWidth * progress), barHeight, barColor);
+        DrawRectangleLines(barX, barY, barWidth, barHeight, WHITE);
+    }
+
+    // Barra de tempo (Time bar)
+    float progress = 1.0f;
+    Color barColor = COL_ACCENT;
+    bool showBar = false;
+
+    if (mgState.phase == MG_PHASE_SHOW) {
+        float showTime = 2.5f - ctx->cycle * 0.3f;
+        if (showTime < 0.8f) showTime = 0.8f;
+        progress = mgState.phaseTimer / showTime;
+        barColor = COL_ACCENT;
+        showBar = true;
+    } else if (mgState.phase == MG_PHASE_PLAY || mgState.phase == MG_PHASE_CHECK) {
+        progress = mgState.playTimeLeft / mgState.playTimeMax;
+        barColor = (progress > 0.25f) ? COL_CORRECT : COL_EVIL;
+        showBar = true;
+    }
+
+    if (showBar) {
+        if (progress < 0.0f) progress = 0.0f;
+        int barWidth = 400;
+        int barHeight = 16;
+        int barX = SCREEN_W / 2 - barWidth / 2;
+        int barY = 75; // Top of the screen (aligned near HUD)
+        
         DrawRectangle(barX, barY, barWidth, barHeight, ColorAlpha(COL_DIM, 0.5f));
         DrawRectangle(barX, barY, (int)(barWidth * progress), barHeight, barColor);
         DrawRectangleLines(barX, barY, barWidth, barHeight, WHITE);
