@@ -83,8 +83,11 @@ void AudioManager_TransitionToScreen(GameScreen screen) {
         return;
     }
     
+    TraceLog(LOG_INFO, "AudioManager: Transitioning from %d to %d (screen: %d)", currentActiveMusic, targetMusic, screen);
+    
     // Stop any existing fading out music immediately to avoid conflicts
     if (fadingOutMusic != MUSIC_NONE && musicLoaded[fadingOutMusic]) {
+        TraceLog(LOG_INFO, "AudioManager: Stopping fading out music %d", fadingOutMusic);
         StopMusicStream(musics[fadingOutMusic]);
     }
     
@@ -93,10 +96,12 @@ void AudioManager_TransitionToScreen(GameScreen screen) {
     
     currentActiveMusic = targetMusic;
     if (currentActiveMusic != MUSIC_NONE && musicLoaded[currentActiveMusic]) {
+        TraceLog(LOG_INFO, "AudioManager: Playing music %d", currentActiveMusic);
         PlayMusicStream(musics[currentActiveMusic]);
         SetMusicVolume(musics[currentActiveMusic], 0.0f);
         currentActiveVolume = 0.0f;
     } else {
+        TraceLog(LOG_WARNING, "AudioManager: Music %d not loaded or MUSIC_NONE", currentActiveMusic);
         currentActiveVolume = 0.0f;
     }
 }
