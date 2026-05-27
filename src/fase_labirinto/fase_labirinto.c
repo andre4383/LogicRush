@@ -5,6 +5,7 @@
 #include "../dialogue/dialogue.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // ── Sprite textures for labirinto ────────────────────────────────────────────
@@ -566,6 +567,59 @@ static void GenerateProceduralLevel(void) {
         }
         strcpy(currentObjective, "DESAFIO FINAL: Supere 15 bloqueios lógicos para salvar o sistema!");
     }
+
+    // ── Modo Competitivo Loop: reposiciona barreiras fora do caminho principal ──
+    // A partir do loop 1: metade das barreiras ficam em becos sem saída,
+    // forçando o jogador a explorar o labirinto sem guia visual direto.
+    if (competitiveLoop > 0 && activeNumBarriers > 0) {
+        // Marca células do caminho principal
+        bool onPath[ROWS][COLS];
+        memset(onPath, 0, sizeof(onPath));
+        for (int p = 0; p < pathLen; p++)
+            onPath[mainPath[p].r][mainPath[p].c] = true;
+
+        // Coleta células andáveis fora do caminho (valor 0 = corredor livre)
+        Coord offCells[ROWS * COLS];
+        int offLen = 0;
+        for (int r = 1; r < ROWS - 1; r++) {
+            for (int c = 1; c < COLS - 1; c++) {
+                if (activeMaze[r][c] == 0 && !onPath[r][c])
+                    offCells[offLen++] = (Coord){r, c};
+            }
+        }
+
+        if (offLen > 0) {
+            // Embaralha as posições disponíveis (Fisher-Yates)
+            for (int i = offLen - 1; i > 0; i--) {
+                int j = rand() % (i + 1);
+                Coord tmp = offCells[i]; offCells[i] = offCells[j]; offCells[j] = tmp;
+            }
+
+            // Quantas barreiras mover: começa em metade, sobe com loops extras
+            int moveCount = activeNumBarriers / 2 + (competitiveLoop - 1);
+            if (moveCount > activeNumBarriers) moveCount = activeNumBarriers;
+            if (moveCount > offLen)            moveCount = offLen;
+
+            for (int i = 0; i < moveCount; i++) {
+                // Remove barreira da posição original no caminho
+                int br = activeBarriers[i].row;
+                int bc = activeBarriers[i].col;
+                activeMaze[br][bc] = 0;
+
+                // Converte tipo de porta para valor de célula (NOT=7 AND=5 OR=8 XOR=6)
+                int cv = 8;
+                if      (activeBarriers[i].type == GATE_NOT) cv = 7;
+                else if (activeBarriers[i].type == GATE_AND) cv = 5;
+                else if (activeBarriers[i].type == GATE_XOR) cv = 6;
+
+                // Posiciona no corredor fora do caminho principal
+                Coord np = offCells[i];
+                activeMaze[np.r][np.c] = cv;
+                activeBarriers[i].row  = np.r;
+                activeBarriers[i].col  = np.c;
+            }
+        }
+    }
 }
 
 // Player and game variables
@@ -670,7 +724,8 @@ static void ResetLevel(void) {
     // Enemy spawn point is also (1,1)
     enemyPos.x = 1 * CELL_SIZE + CELL_SIZE / 2.0f;
     enemyPos.y = 1 * CELL_SIZE + CELL_SIZE / 2.0f;
-    enemySpeed = 110.0f + currentLevelIdx * 25.0f;
+    // Velocidade do inimigo aumenta com nível e com loops competitivos
+    enemySpeed = 110.0f + currentLevelIdx * 25.0f + (float)competitiveLoop * 20.0f;
     
     // Reset trail
     trailCount = 0;
@@ -957,19 +1012,22 @@ void UpdateGameplayScreen(void) {
                 if (activeBarrierChallengeIdx >= 0 && activeBarrierChallengeIdx < activeNumBarriers) {
                     activeBarriers[activeBarrierChallengeIdx].open = true;
                 }
-                globalScore += 150;
+                globalScore += 150 * scoreMultiplier;
                 isPropositionActive = false;
                 activeBarrierChallengeIdx = -1;
                 lastInteractedBarrierIdx = -1;
 
                 // Gate combo: quick sequential correct answers earn +1 vida
-                bool wasQuick = (propositionTimer <= GATE_QUICK_THRESHOLD);
+                // A cada loop o threshold e a janela ficam menores (mais difícil)
+                float effectiveQuickThreshold = fmaxf(1.5f, GATE_QUICK_THRESHOLD - (float)competitiveLoop * 0.5f);
+                float effectiveComboWindow    = fmaxf(4.0f, GATE_COMBO_WINDOW    - (float)competitiveLoop * 1.5f);
+                bool wasQuick = (propositionTimer <= effectiveQuickThreshold);
                 if (wasQuick && gateComboWindow > 0.0f) {
                     gateStreak++;
                 } else {
                     gateStreak = wasQuick ? 1 : 0;
                 }
-                if (wasQuick) gateComboWindow = GATE_COMBO_WINDOW;
+                if (wasQuick) gateComboWindow = effectiveComboWindow;
                 if (gateStreak >= 3) {
                     if (globalLives < 3) {
                         globalLives++;
@@ -1085,7 +1143,7 @@ void UpdateGameplayScreen(void) {
         if (activeMaze[pRow][pCol] == 3) {
             if (!gameWon) {
                 gameWon = true;
-                globalScore += 300;
+                globalScore += 300 * scoreMultiplier;
             }
         }
     }

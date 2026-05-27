@@ -244,21 +244,22 @@ static void DrawDialogueText(const char *text, float tx, float ty,
 
     for (int i = 0; i < nLines; i++)
         DrawText(wlines[i], (int)tx, (int)(startY + i * lineHeight),
-                 fontSize, COLOR_TEXT_MAIN);
+                 fontSize, (Color){ 241, 245, 249, 255 });
 
     // Hint piscante
     if (((int)(hintBlink * 2.0f)) % 2 == 0) {
         const char *hint = "[ ENTER ]";
         int hw = MeasureText(hint, 13);
+        Color hintCol = isAstro ? (Color){ 34, 211, 238, 255 } : (Color){ 234, 179, 8, 255 };
         DrawText(hint, (int)(tx + tw - hw), (int)(ty + th - 16), 13,
-                 ColorAlpha(isAstro ? COLOR_NEON_CYAN : COLOR_NEON_GOLD, 0.9f));
+                 ColorAlpha(hintCol, 0.9f));
     }
 
     // Progresso X/N
     char prog[16];
     snprintf(prog, sizeof(prog), "%d/%d", seqCurrent + 1, seqCount);
     DrawText(prog, (int)tx, (int)(ty + th - 16), 13,
-             ColorAlpha(COLOR_TEXT_MUTED, 0.55f));
+             ColorAlpha((Color){ 148, 163, 184, 255 }, 0.55f));
 }
 
 void Dialogue_Draw(void) {
@@ -291,7 +292,7 @@ void Dialogue_Draw(void) {
         // CAIXA ASTRO — cyberpunk, moldura metálica cinza/chumbo, neon ciano
         // ══════════════════════════════════════════════════════════════════════
         Color metal  = {55, 65, 82, 255};
-        Color cian   = COLOR_NEON_CYAN;
+        Color cian   = (Color){ 34, 211, 238, 255 };
 
         // 1. Fundo escuro
         DrawRectangleRec((Rectangle){bx, by, bw, bh}, (Color){5, 8, 18, 245});
