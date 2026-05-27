@@ -103,9 +103,14 @@ void MemoryGame_Init(GameCtx *ctx)
     mgState.sel[0]      = -1;
     mgState.sel[1]      = -1;
     mgState.selCount    = 0;
-    mgState.phase       = MG_PHASE_SHOW;
-    mgState.passed      = false;
-    mgState.wrongStreak = 0;
+    mgState.phase             = MG_PHASE_SHOW;
+    mgState.passed            = false;
+    mgState.wrongStreak       = 0;
+    mgState.correctStreak     = 0;
+    mgState.comboTimer        = 0.0f;
+    mgState.comboFeedbackTimer = 0.0f;
+    mgState.pendingFlipA       = -1;
+    mgState.pendingFlipB       = -1;
 
     // Show time shortens with cycles
     float showTime = 2.5f - ctx->cycle * 0.3f;
@@ -113,7 +118,7 @@ void MemoryGame_Init(GameCtx *ctx)
     mgState.phaseTimer  = showTime;
 
     // Time limit to solve the memory game
-    mgState.playTimeMax = 30.0f;
+    mgState.playTimeMax  = 30.0f;
     mgState.playTimeLeft = mgState.playTimeMax;
 
     // Build symbol list (pairs of symbols)
@@ -131,10 +136,10 @@ void MemoryGame_Init(GameCtx *ctx)
 
     for (int i = 0; i < mgState.cardCount; i++)
     {
-        mgState.cards[i].symbol   = (Symbol)symbolAssign[i];
-        mgState.cards[i].state    = CARD_FACE_UP;   // will flip down
-        mgState.cards[i].flipT    = 1.0f;
-        mgState.cards[i].selected = false;
+        mgState.cards[i].symbol          = (Symbol)symbolAssign[i];
+        mgState.cards[i].state           = CARD_FACE_UP;   // will flip down
+        mgState.cards[i].flipT           = 1.0f;
+        mgState.cards[i].selected        = false;
         mgState.cards[i].matchSmokeTimer = 0.0f;
     }
 
@@ -179,15 +184,23 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
             c->flipT -= FLIP_SPEED * dt;
             if (c->flipT <= 0.0f) { c->flipT = 0.0f; c->state = CARD_FACE_DOWN; }
         }
-        if (c->matchSmokeTimer > 0) {
-            c->matchSmokeTimer -= dt;
-        }
+        if (c->matchSmokeTimer > 0) c->matchSmokeTimer -= dt;
     }
 
     // Decay flash timers
-    if (mgState.wrongFlashT   > 0) mgState.wrongFlashT   -= dt;
-    if (mgState.correctFlashT > 0) mgState.correctFlashT -= dt;
-    if (ctx->hurtTimer        > 0) ctx->hurtTimer        -= dt;
+    if (mgState.wrongFlashT      > 0) mgState.wrongFlashT      -= dt;
+    if (mgState.correctFlashT    > 0) mgState.correctFlashT    -= dt;
+    if (ctx->hurtTimer           > 0) ctx->hurtTimer           -= dt;
+    if (mgState.comboFeedbackTimer > 0) mgState.comboFeedbackTimer -= dt;
+
+    // Combo window timeout — break streak if player was too slow
+    if (mgState.comboTimer > 0) {
+        mgState.comboTimer -= dt;
+        if (mgState.comboTimer <= 0.0f) {
+            mgState.comboTimer    = 0.0f;
+            mgState.correctStreak = 0;
+        }
+    }
 
     if (mgState.phase == MG_PHASE_PLAY || mgState.phase == MG_PHASE_CHECK) {
         mgState.playTimeLeft -= dt;
@@ -200,6 +213,15 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
             ctx->moodTimer = 2.5f;
             return;
         }
+    }
+
+    if (mgState.pendingFlipA >= 0 && mgState.wrongFlashT <= 0.0f) {
+        mgState.cards[mgState.pendingFlipA].selected = false;
+        mgState.cards[mgState.pendingFlipB].selected = false;
+        StartFlipDown(mgState.pendingFlipA);
+        StartFlipDown(mgState.pendingFlipB);
+        mgState.pendingFlipA = -1;
+        mgState.pendingFlipB = -1;
     }
 
     switch (mgState.phase)
@@ -267,10 +289,10 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                 if (mgState.cards[a].symbol == mgState.cards[b].symbol)
                 {
                     // Match!
-                    mgState.cards[a].state    = CARD_MATCHED;
-                    mgState.cards[b].state    = CARD_MATCHED;
-                    mgState.cards[a].selected = false;
-                    mgState.cards[b].selected = false;
+                    mgState.cards[a].state           = CARD_MATCHED;
+                    mgState.cards[b].state           = CARD_MATCHED;
+                    mgState.cards[a].selected        = false;
+                    mgState.cards[b].selected        = false;
                     mgState.cards[a].matchSmokeTimer = 1.0f;
                     mgState.cards[b].matchSmokeTimer = 1.0f;
                     mgState.pairsFound++;
@@ -281,16 +303,39 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     ctx->mood       = EQUAL_HURT;
                     ctx->moodTimer  = 0.6f;
                     ctx->hurtTimer  = 0.6f;
+                    // Combo streak tracking — 3 correct pairs within 8s = +1 vida
+                    mgState.correctStreak++;
+                    mgState.comboTimer = 8.0f;
+                    if (mgState.correctStreak >= 3) {
+                        if (ctx->lives < 3) {
+                            ctx->lives++;
+                            globalLives = ctx->lives;
+                            mgState.comboFeedbackTimer = 1.8f;
+                        }
+                        mgState.correctStreak = 0;
+                        mgState.comboTimer    = 0.0f;
+                    }
                 }
                 else
                 {
-                    // No match – flip back down
-                    mgState.cards[a].selected = false;
-                    mgState.cards[b].selected = false;
-                    StartFlipDown(a);
-                    StartFlipDown(b);
-                    mgState.wrongFlashT  = 0.4f;
+                    // No match – burn animation, then flip back down
+                    mgState.cards[a].selected        = true;
+                    mgState.cards[b].selected        = true;
+                    mgState.cards[a].matchSmokeTimer = 0.7f;
+                    mgState.cards[b].matchSmokeTimer = 0.7f;
+                    mgState.pendingFlipA             = a;
+                    mgState.pendingFlipB             = b;
+                    mgState.wrongFlashT              = 0.7f;
                     mgState.wrongStreak++;
+                    mgState.correctStreak = 0;
+                    mgState.comboTimer    = 0.0f;
+
+                    ctx->lives--;
+                    globalLives = ctx->lives;
+                    if (ctx->lives <= 0) {
+                        ctx->state = STATE_GAME_OVER;
+                        return;
+                    }
 
                     // Equal gets angrier (NOT damaged) when player misses
                     if (mgState.wrongStreak >= 3)
@@ -396,17 +441,27 @@ static void DrawCard(Card *c, bool showFace, float flashCorrect, float flashWron
                        (c->state == CARD_FACE_UP) ||
                        (c->state == CARD_MATCHED);
 
-    bool isMatched = (c->state == CARD_MATCHED);
-
     // Common Chip Body
     Color bg = (Color){25, 25, 25, 255}; // Very dark grey/black chip body
-    
+    bool isMatched = (c->state == CARD_MATCHED);
+    bool isBurning = isMatched || c->matchSmokeTimer > 0.0f;
+
     if (faceVisible && showFace) {
         if (c->selected && flashWrong > 0) {
             bg = ColorAlpha(COL_WRONG, 0.5f + flashWrong * 0.5f);
-        } else if (isMatched) {
-            // Charred/Burned chip body
-            bg = (Color){10, 10, 10, 255}; 
+        } else if (isBurning) {
+            float burnPulse = 0.5f + sinf((float)GetTime() * 9.0f) * 0.4f;
+            if (isMatched) {
+                bg = (Color){
+                    (unsigned char)(10 + 50 * burnPulse),
+                    (unsigned char)(8 + 20 * burnPulse),
+                    5, 255};
+            } else {
+                bg = (Color){
+                    (unsigned char)(60 + 100 * burnPulse),
+                    (unsigned char)(20 + 35 * burnPulse),
+                    8, 255};
+            }
         } else if (c->selected && flashCorrect > 0) {
             bg = ColorAlpha(COL_CORRECT, 0.4f + flashCorrect * 0.5f);
         }
@@ -415,54 +470,65 @@ static void DrawCard(Card *c, bool showFace, float flashCorrect, float flashWron
     // Draw chip body
     DrawRectangleRec(r, bg);
     DrawRectangleLinesEx(r, 2.0f,
-        isMatched ? (Color){255,150,40,255} :
+        isBurning ? (Color){255, 150, 40, 255} :
         (c->selected ? COL_ACCENT : (Color){50, 50, 50, 255}));
 
     // Draw chip pins (silver normally, blackened when burned)
-    Color pinCol = isMatched ? (Color){30, 25, 25, 255} : (Color){160, 165, 170, 255};
+    Color pinCol = isBurning ? (Color){30, 25, 25, 255} : (Color){160, 165, 170, 255};
     for (int i = 0; i < 4; i++) {
         float py = r.y + r.height*(0.15f + i*0.23f) - 4.0f;
         DrawRectangle((int)(r.x-5),(int)py,5,8, pinCol);
         DrawRectangle((int)(r.x+r.width),(int)py,5,8, pinCol);
     }
-    
+
     // Dimple indicator (pin 1)
     if (scaleX > 0.3f) {
         DrawCircle((int)(r.x + 8), (int)(r.y + 8), 3, (Color){10, 10, 10, 255});
     }
 
-    if (isMatched) {
-        // Burn cracks (multiple black/deep red lines to show broken silicon) remain permanently
+    if (isBurning) {
+        Color crackCol = isMatched ? (Color){0, 0, 0, 255}
+                                   : ColorAlpha((Color){80, 20, 5, 255}, 0.9f);
         DrawLineEx((Vector2){r.x+r.width*0.1f, r.y+r.height*0.2f},
                    (Vector2){r.x+r.width*0.5f, r.y+r.height*0.6f},
-                   2.5f, (Color){0, 0, 0, 255});
+                   2.5f, crackCol);
         DrawLineEx((Vector2){r.x+r.width*0.5f, r.y+r.height*0.6f},
                    (Vector2){r.x+r.width*0.8f, r.y+r.height*0.8f},
-                   1.5f, (Color){20, 5, 0, 255});
+                   1.5f, ColorAlpha((Color){20, 5, 0, 255}, isMatched ? 1.0f : 0.85f));
         DrawLineEx((Vector2){r.x+r.width*0.5f, r.y+r.height*0.6f},
                    (Vector2){r.x+r.width*0.6f, r.y+r.height*0.3f},
-                   2.0f, (Color){5, 0, 0, 255});
-                   
-        // Smoke and sparks only happen briefly after a match
+                   2.0f, ColorAlpha((Color){5, 0, 0, 255}, isMatched ? 1.0f : 0.85f));
+
+        if (c->matchSmokeTimer > 0) {
+            float t = (float)GetTime();
+            for (int i = 0; i < 4; i++) {
+                float sx = r.x + r.width*0.5f + sinf(t*5.0f+i*1.5f)*r.width*0.35f;
+                float sy = r.y + r.height*0.5f + cosf(t*7.0f+i*1.8f)*r.height*0.3f;
+                float ss = 1.5f + sinf(t*15.0f+i)*1.0f;
+                DrawCircle((int)sx, (int)sy, (int)ss,
+                           ColorAlpha((Color){255, 180, 60, 255}, 0.7f));
+            }
+        }
+
+        // Smoke and drifting sparks after match or wrong guess
         if (c->matchSmokeTimer > 0) {
             float st = 1.0f - c->matchSmokeTimer; // 0.0 to 1.0 progress
             float t = (float)GetTime();
-            
+
             // Smoke clouds drifting up
             for (int i = 0; i < 5; i++) {
                 float sx = r.x + r.width*0.5f + sinf(t*3.0f+i*2.2f)*r.width*0.3f;
-                float sy = r.y + r.height*0.5f - st * 40.0f - i * 5.0f; // drift up
-                float ss = 5.0f + st * 10.0f + sinf(t*8.0f+i)*2.0f; // expand
-                
-                float alpha = (1.0f - st) * 0.7f; // fade out
+                float sy = r.y + r.height*0.5f - st * 40.0f - i * 5.0f;
+                float ss = 5.0f + st * 10.0f + sinf(t*8.0f+i)*2.0f;
+                float alpha = (1.0f - st) * 0.7f;
                 if (alpha > 0) {
-                    DrawCircle((int)sx, (int)sy, (int)ss, 
+                    DrawCircle((int)sx, (int)sy, (int)ss,
                                ColorAlpha((Color){40, 40, 40, 255}, alpha));
                 }
             }
-            
+
             // Brief sparks shooting out
-            if (st < 0.5f) { // only first half second
+            if (st < 0.5f) {
                 for (int i = 0; i < 4; i++) {
                     float ang = t*10.0f + i*1.5f;
                     float dist = st * 60.0f + i*5.0f;
@@ -470,7 +536,7 @@ static void DrawCard(Card *c, bool showFace, float flashCorrect, float flashWron
                     float sy = r.y + r.height*0.5f + sinf(ang)*dist - st*20.0f;
                     float ss = 1.5f + (0.5f - st)*3.0f;
                     if (ss > 0) {
-                        DrawCircle((int)sx, (int)sy, (int)ss, 
+                        DrawCircle((int)sx, (int)sy, (int)ss,
                                    ColorAlpha((Color){255, 180, 50, 255}, (0.5f - st)*2.0f));
                     }
                 }
@@ -479,7 +545,7 @@ static void DrawCard(Card *c, bool showFace, float flashCorrect, float flashWron
     }
 
     if (faceVisible && showFace) {
-        Color sc = isMatched ? (Color){100, 40, 20, 255} : SYMBOL_COLORS[c->symbol]; // Burnt text
+        Color sc = isMatched ? (Color){100, 40, 20, 255} : SYMBOL_COLORS[c->symbol];
         int fs = 24;
         int tw = MeasureText(SYMBOL_LABELS[c->symbol], fs);
         DrawText(SYMBOL_LABELS[c->symbol],
@@ -503,14 +569,12 @@ void MemoryGame_Draw(GameCtx *ctx)
     for (int y = 0; y < SCREEN_H; y += 4)
         DrawLine(0, y, SCREEN_W, y, ColorAlpha(COL_PANEL, 0.18f));
 
-    // HUD
-    DrawText(TextFormat("VIDAS: %d", ctx->lives),
-             35, 75, 16, COL_CORRECT);
+    // Pairs counter
     DrawText(TextFormat("PARES: %d / %d  (PRECISA DE %d)",
                         mgState.pairsFound,
                         mgState.pairsTotal,
                         mgState.pairsNeeded),
-             180, 75, 16, COL_TEXT);
+             35, 75, 16, COL_TEXT);
 
     // Phase label
     const char *phaseLabel = "";
@@ -538,7 +602,7 @@ void MemoryGame_Draw(GameCtx *ctx)
     }
     DrawText(phaseLabel,
              SCREEN_W / 2 - MeasureText(phaseLabel, 26) / 2,
-             SCREEN_H - 36, 26, phaseColor);
+             SCREEN_H - 70, 26, phaseColor);
 
     // Barra de tempo (Time bar)
     float progress = 1.0f;
@@ -598,6 +662,17 @@ void MemoryGame_Draw(GameCtx *ctx)
 
     // Equal on the right
     Equal_Draw(ctx, SCREEN_W * 0.83f, SCREEN_H * 0.48f, 1.0f);
+
+    // Combo life-gain feedback
+    if (mgState.comboFeedbackTimer > 0) {
+        float a = mgState.comboFeedbackTimer > 0.5f ? 1.0f : mgState.comboFeedbackTimer * 2.0f;
+        const char *comboMsg = "+1 VIDA!  COMBO!";
+        int cw = MeasureText(comboMsg, 36);
+        DrawText(comboMsg,
+                 SCREEN_W / 2 - cw / 2,
+                 SCREEN_H / 2 - 80,
+                 36, ColorAlpha(COL_CORRECT, a));
+    }
 
     // "ERRADO" text when wrong (like concept art)
     if (mgState.wrongFlashT > 0)

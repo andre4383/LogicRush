@@ -26,6 +26,18 @@ A experiência é inspirada em “party games” de alta intensidade e conta com
 
 - Encare a IA diretamente enquanto ela lança expressões lógicas complexas contra você. Simplifique essas expressões usando cubos para reparar os dados e refletir o dano de volta nela.
 
+## Sistema de Vidas
+
+O jogador começa com **3 vidas** compartilhadas entre todas as fases.
+
+| Fase | Como ganhar vida | Condição |
+|------|-----------------|----------|
+| Fase 1 — Memory Cards | Acertar **3 pares seguidos** | Cada par deve ser encontrado dentro de 8 s do anterior; errar um par reseta o combo |
+| Fase 2 — Entangled Circuitry | Responder **3 portões corretos em sequência** | Cada resposta deve ser dada em até 5 s após a questão aparecer; resposta errada reseta o combo |
+| Fase 3 — Meeting Equal | **Não ganha vida** | — |
+
+---
+
 ## Placar de Líderes ao Vivo
 
 O Logic Rush inclui um **visualizador de placar independente** que pode rodar em paralelo com o jogo — ideal para eventos, apresentações ou um segundo monitor.

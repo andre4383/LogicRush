@@ -183,14 +183,14 @@ static const Proposition PROPOSITIONS[] = {
       "Selecione a forma expandida equivalente:",
       {"(P^Q)v(~P^~Q)", "P->Q", "P^Q", "~P^~Q"},
       4, 3, {34,  197, 94,  255} },
-    { "P ^ (Q v R)",
-      "Aplique a distributividade:",
-      {"(P^Q) v (P^R)", "(PvQ) ^ (PvR)", "P v (Q^R)", "P^Q^R"},
-      4, 3, {168, 85,  247, 255} },
-    { "(P v Q) ^ (P v R)",
-      "Aplique a distributividade:",
-      {"P v (Q ^ R)", "(P^Q) v (P^R)", "P ^ (Q v R)", "P v Q v R"},
-      4, 3, {234, 179, 8,   255} },
+    { "P ^ Q",
+      "Selecione a forma equivalente (comutatividade):",
+      {"Q ^ P", "P v Q", "~P ^ ~Q", "P -> Q"},
+      3, 3, {168, 85,  247, 255} },
+    { "P v Q",
+      "Selecione a forma equivalente (comutatividade):",
+      {"Q v P", "P ^ Q", "~P v ~Q", "P -> Q"},
+      3, 3, {234, 179, 8,   255} },
     { "P v ~P",
       "Esta proposicao e classificada como:",
       {"Tautologia", "Contradicao", "Contingencia", "Indefinida"},
@@ -717,11 +717,16 @@ static void SpawnCube(void) {
     if (slot < 0) return;
 
     // Seleciona proposição
+    // No estágio 3, intercala 50% V/F (estágio 2) para aliviar a dificuldade
+    int targetStage = boss.currentStage;
+    if (boss.currentStage == 3 && (RandRange(0, 2) == 0)) {
+        targetStage = 2;
+    }
     int idx = -1;
     int attempts = 0;
     while (attempts < 200) {
         int candidate = RandRange(0, TOTAL_PROPOSITIONS);
-        if (PROPOSITIONS[candidate].stage != boss.currentStage) { attempts++; continue; }
+        if (PROPOSITIONS[candidate].stage != targetStage) { attempts++; continue; }
         int repeated = 0;
         for (int r = 0; r < 5; r++) {
             if (recentProps[r] == candidate) { repeated = 1; break; }
@@ -731,7 +736,7 @@ static void SpawnCube(void) {
     }
     if (idx < 0) {
         for (int i = 0; i < TOTAL_PROPOSITIONS; i++) {
-            if (PROPOSITIONS[i].stage == boss.currentStage) { idx = i; break; }
+            if (PROPOSITIONS[i].stage == targetStage) { idx = i; break; }
         }
     }
 
@@ -1258,24 +1263,6 @@ static void DrawPlayerShield(float t) {
 //                         DRAW — HUD
 // ==================================================================================
 
-// Vidas do jogador — canto inferior direito
-static void DrawPlayerHearts(void) {
-    float hx = (float)(SCREEN_WIDTH - 140);
-    float hy  = (float)CARD_ZONE_Y - 42.0f;
-    DrawText("JOGADOR", (int)hx - 4, (int)(hy - 16), 13, COLOR_TEXT_MUTED);
-    for (int i = 0; i < PLAYER_MAX_HP; i++) {
-        Color col = (i < boss.playerHP) ? COLOR_NEON_GREEN
-                                        : ColorAlpha(COLOR_TEXT_MUTED, 0.22f);
-        float hpx = hx + i * 38.0f;
-        DrawCircle((int)(hpx+6),  (int)(hy+6),  8.0f, col);
-        DrawCircle((int)(hpx+18), (int)(hy+6),  8.0f, col);
-        DrawTriangle((Vector2){hpx,hy+10}, (Vector2){hpx+24,hy+10},
-                     (Vector2){hpx+12,hy+24}, col);
-        if (i < boss.playerHP)
-            DrawCircle((int)(hpx+12),(int)(hy+10),14.0f,ColorAlpha(col,0.12f));
-    }
-}
-
 // HP da Equal — barra vertical, lado esquerdo da tela
 static void DrawBossHPBar(void) {
     int barH = 240, barW = 24;
@@ -1406,15 +1393,13 @@ void DrawBossScreen(void) {
     DrawUnifiedHUD("FASE 3: BOSS FIGHT", stgStr,
                    "Clique com o MOUSE nas respostas para rebater os ataques");
 
-    Rectangle botHud = { 15, SCREEN_HEIGHT - 35, SCREEN_WIDTH - 30, 28 };
-    DrawThemeGlassPanel(botHud, 0.20f, ColorAlpha(COLOR_GRID_LINE, 0.15f));
-    const char *hint = (selectedCube >= 0 && feedbackTimer <= 0.0f)
-        ? "Use o MOUSE para clicar na resposta   |   Responda antes do tempo!"
-        : "Aguarde...   |   ESC: Menu";
-    DrawText(hint, SCREEN_WIDTH/2 - MeasureText(hint,13)/2,
-             SCREEN_HEIGHT - 28, 13, COLOR_TEXT_MUTED);
+    {
+        const char *hint = (selectedCube >= 0 && feedbackTimer <= 0.0f)
+            ? "Mouse: Clicar na resposta  |  Responda antes do tempo!  |  ESC: Pausar"
+            : "Aguarde o proximo cubo...  |  ESC: Pausar";
+        DrawBottomHUD(hint);
+    }
 
-    DrawPlayerHearts();   // vidas — canto inferior direito
     DrawBossHPBar();      // HP da Equal — barra vertical esquerda
 
     DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
