@@ -35,10 +35,12 @@ typedef enum {
 
 // ─── Equal moods ───────────────────────────────────────────────────────────
 typedef enum {
-    EQUAL_NORMAL = 0,
-    EQUAL_ANGRY,
-    EQUAL_GLITCH,
-    EQUAL_HURT
+    EQUAL_NORMAL    = 0,  // idle – nenhuma carta virada ainda
+    EQUAL_ANGRY,          // 1-2 erros consecutivos
+    EQUAL_GLITCH,         // 3+ erros consecutivos
+    EQUAL_HURT,           // player acertou um par
+    EQUAL_PREPARING,      // jogo ativo (carta virada / fase PLAY) – frame "preparando ataque"
+    EQUAL_DEFEATED        // player venceu – frame de derrota
 } EqualMood;
 
 // ─── Shared context passed everywhere ──────────────────────────────────────

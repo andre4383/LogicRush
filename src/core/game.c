@@ -4,11 +4,30 @@
 #include "theme.h"
 #include "../fase_quiz/game.h"
 #include "../fase_quiz/memory_game.h"
+#include "../dialogue/dialogue.h"
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 #include "ranking.h"
 
 // Define the global active screen
 GameScreen currentScreen = SCREEN_TITLE;
+
+// Modo de jogo atual
+GameMode currentGameMode = MODE_COMPETITIVE;
+
+// ── Flags de estado do Modo História ────────────────────────────────────────
+bool storyQuizDialogueShown  = false;
+bool storyMazeDialogueShown  = false;
+bool storyBossPhase2Shown    = false;
+bool storyBossPhase3Shown    = false;
+
+void Story_ResetFlags(void) {
+    storyQuizDialogueShown  = false;
+    storyMazeDialogueShown  = false;
+    storyBossPhase2Shown    = false;
+    storyBossPhase3Shown    = false;
+}
 
 // Global font variables
 Font fontMain;
@@ -84,31 +103,59 @@ void DrawPhaseBanner(void) {
 void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const char* helpText) {
     // Glassmorphic top panel
     DrawThemeGlassPanel((Rectangle){ 15, 10, SCREEN_WIDTH - 30, 48 }, 0.20f, ColorAlpha(COLOR_GRID_LINE, 0.25f));
-    
+
     // Left: Game name & active phase
     char titleText[128];
     if (phaseSubtitle && phaseSubtitle[0] != '\0') {
-        sprintf(titleText, "LOGIC RUSH: %s — %s", phaseTitle, phaseSubtitle);
+        sprintf(titleText, "LOGIC RUSH: %s | %s", phaseTitle, phaseSubtitle);
     } else {
         sprintf(titleText, "LOGIC RUSH: %s", phaseTitle);
     }
     DrawText(titleText, 35, 24, 18, COLOR_TEXT_CYBER);
-    
-    // Middle: Help text
-    if (helpText) {
-        int helpW = MeasureText(helpText, 13);
-        DrawText(helpText, SCREEN_WIDTH / 2 - helpW / 2, 27, 13, COLOR_TEXT_MUTED);
-    }
-    
+
+    (void)helpText; // commands moved to DrawBottomHUD
+
     // Middle-Right: Timer
     char timerText[32];
     sprintf(timerText, "TEMPO: %.1f s", globalTimer);
-    DrawText(timerText, SCREEN_WIDTH - 380, 24, 18, COLOR_TEXT_MAIN);
-    
+    DrawText(timerText, SCREEN_WIDTH - 430, 24, 18, COLOR_TEXT_MAIN);
+
     // Right: Score
     char scoreText[32];
     sprintf(scoreText, "SCORE: %05d", globalScore);
-    DrawText(scoreText, SCREEN_WIDTH - 180, 24, 18, COLOR_NEON_GOLD);
+    DrawText(scoreText, SCREEN_WIDTH - 250, 24, 18, COLOR_NEON_GOLD);
+
+    // Far-right: Lives as hearts
+    int hStartX = SCREEN_WIDTH - 110;
+    int hY = 19;
+    for (int i = 0; i < 3; i++) {
+        Color hCol = (i < globalLives) ? COLOR_NEON_GREEN
+                                       : ColorAlpha(COLOR_TEXT_MUTED, 0.22f);
+        float hx = (float)(hStartX + i * 26);
+        float hy = (float)hY;
+        // Heart: two overlapping circles on top + downward triangle
+        DrawCircle((int)(hx + 5),  (int)(hy + 5), 5.5f, hCol);
+        DrawCircle((int)(hx + 13), (int)(hy + 5), 5.5f, hCol);
+        DrawTriangle(
+            (Vector2){hx - 1.0f,        hy + 7.0f},
+            (Vector2){hx + 9.0f,        hy + 19.0f},
+            (Vector2){hx + 19.0f,       hy + 7.0f},
+            hCol);
+        // Glow for active lives
+        if (i < globalLives)
+            DrawCircle((int)(hx + 9), (int)(hy + 9), 11.0f,
+                       ColorAlpha(hCol, 0.10f));
+    }
+}
+
+// Bottom HUD bar — commands/controls for the active phase
+void DrawBottomHUD(const char* commands) {
+    DrawThemeGlassPanel((Rectangle){ 15, SCREEN_HEIGHT - 35, SCREEN_WIDTH - 30, 28 },
+                        0.20f, ColorAlpha(COLOR_GRID_LINE, 0.15f));
+    if (commands) {
+        int w = MeasureText(commands, 13);
+        DrawText(commands, SCREEN_WIDTH / 2 - w / 2, SCREEN_HEIGHT - 28, 13, COLOR_TEXT_MUTED);
+    }
 }
 
 // Quiz lifecycle wrappers
@@ -151,6 +198,7 @@ void UpdateQuizScreen(void) {
             if (CheckCollisionPointRec(mousePos, btnRestart)) {
                 globalScore = 0;
                 globalTimer = 0.0f;
+                globalLives = 3;
                 InitQuizScreen();
             }
             if (CheckCollisionPointRec(mousePos, btnMenu)) {
@@ -160,6 +208,7 @@ void UpdateQuizScreen(void) {
         if (IsKeyPressed(KEY_SPACE)) {
             globalScore = 0;
             globalTimer = 0.0f;
+            globalLives = 3;
             InitQuizScreen();
         }
         if (IsKeyPressed(KEY_ESCAPE)) {
@@ -180,15 +229,30 @@ void UpdateQuizScreen(void) {
     extern MemoryGameState mgState;
     if (mgState.phase == MG_PHASE_DONE) {
         if (mgState.passed) {
-            // Quiz passed! Transition to Labyrinth (Fase 2)
-            currentScreen = SCREEN_GAMEPLAY;
-            InitGameplayScreen();
-            StartPhaseBanner("FASE 2", "LABIRINTO DE PORTAS");
+            // Quiz passed!
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: exibir diálogos pós-fase 1 antes do labirinto
+                // A transição para SCREEN_GAMEPLAY acontece quando os diálogos terminarem
+                // Pré-inicia a tela de gameplay para estar pronta
+                InitGameplayScreen();
+                Dialogue_StartSeq(DSEQ_POST_FASE1, SCREEN_GAMEPLAY);
+                currentScreen = SCREEN_STORY_DIALOGUE;
+            } else {
+                // Modo Competitivo: transição direta
+                currentScreen = SCREEN_GAMEPLAY;
+                InitGameplayScreen();
+                StartPhaseBanner("FASE 2", "LABIRINTO DE PORTAS");
+            }
         } else {
             quizCtx.state = STATE_GAME_OVER;
-            // Trigger ranking screen on death
-            Ranking_ScreenEnter(globalScore, globalTimer, 1);
-            currentScreen = SCREEN_RANKING;
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: sem ranking, volta ao menu
+                currentScreen = SCREEN_TITLE;
+            } else {
+                // Modo Competitivo: exibe ranking
+                Ranking_ScreenEnter(globalScore, globalTimer, 1);
+                currentScreen = SCREEN_RANKING;
+            }
         }
     }
 }
@@ -199,8 +263,12 @@ void DrawQuizScreen(void) {
     
     MemoryGame_Draw(&quizCtx);
     
-    // Draw unified top HUD
-    DrawUnifiedHUD("FASE 1: QUIZ", "EQUIVALÊNCIAS", "ESC: Voltar ao Menu | Combine as equivalências corretas");
+    DrawUnifiedHUD("FASE 1: QUIZ", "EQUIVALÊNCIAS", NULL);
+#ifdef __APPLE__
+    DrawBottomHUD("ESC: Pausar  |  Clique nas cartas para combinar  |  Ctrl+F: Fullscreen");
+#else
+    DrawBottomHUD("ESC: Pausar  |  Clique nas cartas para combinar  |  F11: Fullscreen");
+#endif
     
     // Draw Game Over overlay if needed
     if (quizCtx.state == STATE_GAME_OVER) {
@@ -260,7 +328,16 @@ void InitGame(void) {
         0x00D4, 0x00F4, // Ô, ô
         0x00D5, 0x00F5, // Õ, õ
         0x00DA, 0x00FA, // Ú, ú
-        0x00C7, 0x00E7  // Ç, ç
+        0x00C7, 0x00E7, // Ç, ç
+        0x2261, // ≡
+        0x2192, // →
+        0x2194, // ↔
+        0x2295, // ⊕
+        0x2191, // ↑
+        0x2193, // ↓
+        0x00AC, // ¬
+        0x2227, // ∧
+        0x2228  // ∨
     };
     for (int i = 0; i < (int)(sizeof(pt_chars)/sizeof(pt_chars[0])); i++) {
         codepoints[count++] = pt_chars[i];
@@ -278,6 +355,9 @@ void InitGame(void) {
     
     // Load leaderboard from disk
     Ranking_Load();
+
+    // Initialize dialogue system
+    Dialogue_Init();
 
     // Initialise all screens
     InitTitleScreen();
@@ -321,8 +401,12 @@ void DrawPauseOverlay(void) {
 }
 
 void UpdateGame(void) {
-    // Fullscreen toggle
+    // Fullscreen toggle (F11 on Windows/Linux; Ctrl+F on macOS — F11 lowers volume on Mac)
+#ifdef __APPLE__
+    if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_F)) ToggleFullscreen();
+#else
     if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
+#endif
 
     // Update audio and screen-specific music transitions
     static GameScreen lastScreen = SCREEN_LOGO;
@@ -359,6 +443,12 @@ void UpdateGame(void) {
         case SCREEN_TITLE:
             UpdateTitleScreen();
             break;
+        case SCREEN_INTRO:
+            UpdateIntroScreen();
+            break;
+        case SCREEN_STORY_DIALOGUE:
+            Dialogue_Update();
+            break;
         case SCREEN_QUIZ:
             UpdateQuizScreen();
             break;
@@ -381,6 +471,15 @@ void DrawGame(void) {
     switch (currentScreen) {
         case SCREEN_TITLE:
             DrawTitleScreen();
+            break;
+        case SCREEN_INTRO:
+            DrawIntroScreen();
+            break;
+        case SCREEN_STORY_DIALOGUE:
+            // Desenha fundo escuro e o diálogo por cima
+            ClearBackground(COLOR_BG_DARK);
+            DrawThemeGrid(SCREEN_WIDTH, SCREEN_HEIGHT, CELL_SIZE);
+            Dialogue_Draw();
             break;
         case SCREEN_QUIZ:
             DrawQuizScreen();
@@ -410,7 +509,9 @@ void UnloadGame(void) {
     UnloadQuizScreen();
     UnloadGameplayScreen();
     UnloadBossScreen();
-    
+    UnloadIntroScreen();
+    Dialogue_Unload();
+
     // Unload global fonts
     UnloadFont(fontMain);
     UnloadFont(fontBold);

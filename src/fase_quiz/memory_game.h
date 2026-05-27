@@ -31,6 +31,7 @@ typedef struct {
     float      x, y;     // centre position
     float      width, height;
     bool       selected;
+    float      matchSmokeTimer;
 } Card;
 
 // ─── Memory game state ─────────────────────────────────────────────────────
@@ -56,9 +57,16 @@ typedef struct {
     MgPhase phase;
     float   phaseTimer;
     bool    passed;
-    int     wrongStreak;   // equal gets angrier with wrong streaks
-    float   wrongFlashT;   // white flash on wrong match
+    int     wrongStreak;      // equal gets angrier with wrong streaks
+    float   wrongFlashT;      // white flash on wrong match
     float   correctFlashT;
+    float   playTimeLeft;
+    float   playTimeMax;
+    int     correctStreak;    // consecutive correct pairs for life-gain combo
+    float   comboTimer;       // time window between pairs; resets streak when 0
+    float   comboFeedbackTimer; // shows "+1 VIDA!" feedback when > 0
+    int     pendingFlipA;       // delayed flip after wrong-guess burn (-1 = none)
+    int     pendingFlipB;
 } MemoryGameState;
 
 extern MemoryGameState mgState;

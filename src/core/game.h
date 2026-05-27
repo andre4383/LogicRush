@@ -3,6 +3,7 @@
 
 #include "raylib.h"
 #include "screens.h"
+#include "../dialogue/dialogue.h"
 
 // Screen configuration constants
 #define SCREEN_WIDTH 1280
@@ -10,6 +11,9 @@
 
 // Active screen state
 extern GameScreen currentScreen;
+
+// Modo de jogo atual (Competitivo ou História)
+extern GameMode currentGameMode;
 
 // Fonts
 extern Font fontMain;
@@ -82,12 +86,29 @@ void StartPhaseBanner(const char* title, const char* subtitle);
 void UpdatePhaseBanner(float dt);
 void DrawPhaseBanner(void);
 
-// Unified Glassmorphic HUD drawing helper
+// Unified Glassmorphic HUD drawing helpers
 void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const char* helpText);
+void DrawBottomHUD(const char* commands);
 
 // Ranking screen
 void Ranking_ScreenEnter(int score, float time, int phase);
 void UpdateRankingScreen(void);
 void DrawRankingScreen(void);
+
+// ── Modo História: tela de introdução ────────────────────────────────────────
+void InitIntroScreen(void);
+void UpdateIntroScreen(void);
+void DrawIntroScreen(void);
+void UnloadIntroScreen(void);
+
+// ── Flags de estado do Modo História ─────────────────────────────────────────
+// (definidas em game.c, usadas pelas fases)
+extern bool storyQuizDialogueShown;
+extern bool storyMazeDialogueShown;
+extern bool storyBossPhase2Shown;
+extern bool storyBossPhase3Shown;
+
+// Reseta todas as flags de história (chame ao iniciar nova partida história)
+void Story_ResetFlags(void);
 
 #endif // GAME_H

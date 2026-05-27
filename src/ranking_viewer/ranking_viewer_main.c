@@ -117,7 +117,11 @@ int main(void) {
             }
         }
 
+#ifdef __APPLE__
+        if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_F)) ToggleFullscreen();
+#else
         if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
+#endif
 
         // Animation step
         for (int i = 0; i < g_leaderboard.count; i++) {

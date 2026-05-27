@@ -2,6 +2,7 @@
 #include "../core/ranking.h"
 #include "../core/screens.h"
 #include "../core/theme.h"
+#include "../dialogue/dialogue.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -123,6 +124,16 @@ static int activeBarrierChallengeIdx = -1;
 static int lastInteractedBarrierIdx = -1;
 static bool gameOver = false;
 static float errorCooldownTimer = 0.0f;
+
+// Flags de história (resetadas em InitGameplayScreen via ResetLevel)
+static bool storyPostPhase2Sent = false; // Controla envio dos diálogos pós-fase 2
+// Gate combo — answer 3 gates quickly in sequence to gain 1 life
+#define GATE_QUICK_THRESHOLD 5.0f  // max seconds to answer and count as "quick"
+#define GATE_COMBO_WINDOW   12.0f  // max seconds between consecutive quick answers
+static int   gateStreak     = 0;
+static float propositionTimer = 0.0f;   // time since current proposition became active
+static float gateComboWindow  = 0.0f;   // countdown; reset streak when 0
+static float gateComboFeedbackTimer = 0.0f;
 
 typedef struct {
     char questionText[256];
@@ -647,6 +658,11 @@ static void ResetLevel(void) {
     errorCooldownTimer = 0.0f;
     activeBarrierChallengeIdx = -1;
     lastInteractedBarrierIdx = -1;
+    storyPostPhase2Sent = false;
+    gateStreak            = 0;
+    propositionTimer      = 0.0f;
+    gateComboWindow       = 0.0f;
+    gateComboFeedbackTimer = 0.0f;
     enemySpawnDelay = 3.0f;
     enemyPathLen = 0;
     enemyPathUpdateTimer = 0;
@@ -717,7 +733,13 @@ static void UpdateEnemy(float dt) {
         float distToPlayer = sqrtf((playerPos.x - enemyPos.x) * (playerPos.x - enemyPos.x) + (playerPos.y - enemyPos.y) * (playerPos.y - enemyPos.y));
         if (distToPlayer < (enemyRadius + playerRadius)) {
             gameOver = true;
-            globalLives = 0;  // sync global lives
+            if (currentGameMode == MODE_STORY) {
+                // Modo História: consome uma vida
+                globalLives--;
+                if (globalLives < 0) globalLives = 0;
+            } else {
+                globalLives = 0;  // Modo Competitivo: game over direto
+            }
         }
     }
 }
@@ -736,6 +758,15 @@ void UpdateGameplayScreen(void) {
     }
     
     if (gameWon) {
+        // Modo História: mostrar diálogos pós-fase 2 antes de ir ao boss
+        if (currentGameMode == MODE_STORY && !storyPostPhase2Sent) {
+            storyPostPhase2Sent = true;
+            InitBossScreen();
+            Dialogue_StartSeq(DSEQ_POST_FASE2, SCREEN_BOSS);
+            currentScreen = SCREEN_STORY_DIALOGUE;
+            return;
+        }
+
         if (IsKeyPressed(KEY_SPACE)) {
             if (currentLevelIdx < MAX_LEVELS - 1) {
                 currentLevelIdx++;
@@ -751,7 +782,7 @@ void UpdateGameplayScreen(void) {
             currentScreen = SCREEN_TITLE;
             return;
         }
-        
+
         // Mouse click detection
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
@@ -776,8 +807,22 @@ void UpdateGameplayScreen(void) {
         }
         return;
     }
-    
+
     if (gameOver) {
+        // ── Modo História: respawn se ainda tem vidas ─────────────────────────
+        if (currentGameMode == MODE_STORY) {
+            if (globalLives > 0) {
+                // Reinicia a fase sem exibir diálogos novamente
+                ResetLevel();
+                return;
+            } else {
+                // Sem vidas → volta ao menu sem ranking
+                currentScreen = SCREEN_TITLE;
+                return;
+            }
+        }
+
+        // ── Modo Competitivo: comportamento original ──────────────────────────
         static bool rankingTrigLab = false;
         if (!rankingTrigLab) {
             rankingTrigLab = true;
@@ -794,7 +839,7 @@ void UpdateGameplayScreen(void) {
             currentScreen = SCREEN_TITLE;
             return;
         }
-        
+
         // Mouse interaction for Game Over
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
@@ -802,6 +847,7 @@ void UpdateGameplayScreen(void) {
         Vector2 mousePos = GetMousePosition();
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (CheckCollisionPointRec(mousePos, btnRestart)) {
+                rankingTrigLab = false;
                 ResetLevel();
                 return;
             }
@@ -814,15 +860,24 @@ void UpdateGameplayScreen(void) {
     }
     
     if (isIntroActive) {
-        if (IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)) {
-            isIntroActive = false;
-        }
-        
+        bool closePopup = false;
+
+        if (IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)) closePopup = true;
+
         // Check for glass panel button click
         Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f + 165, 200, 45 };
         Vector2 mousePos = GetMousePosition();
-        if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (CheckCollisionPointRec(mousePos, btnRect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            closePopup = true;
+
+        if (closePopup) {
             isIntroActive = false;
+            // Modo História: exibir diálogos pré-fase 2 se ainda não foram mostrados
+            if (currentGameMode == MODE_STORY && !storyMazeDialogueShown) {
+                storyMazeDialogueShown = true;
+                Dialogue_StartSeq(DSEQ_PRE_FASE2, SCREEN_GAMEPLAY);
+                currentScreen = SCREEN_STORY_DIALOGUE;
+            }
         }
         return;
     }
@@ -831,6 +886,7 @@ void UpdateGameplayScreen(void) {
         if (errorCooldownTimer > 0.0f) {
             float dt = GetFrameTime();
             errorCooldownTimer -= dt;
+            propositionTimer   += dt;
             
             // The virus keeps updating and can capture the player!
             UpdateEnemy(dt);
@@ -886,13 +942,24 @@ void UpdateGameplayScreen(void) {
         
         bool choseTrue = false;
         bool choseFalse = false;
-        
+
+        propositionTimer += GetFrameTime();
+
+        // Combo window decay
+        if (gateComboWindow > 0.0f) {
+            gateComboWindow -= GetFrameTime();
+            if (gateComboWindow <= 0.0f) {
+                gateComboWindow = 0.0f;
+                gateStreak      = 0;
+            }
+        }
+
         if (IsKeyPressed(KEY_V)) choseTrue = true;
         if (IsKeyPressed(KEY_F)) choseFalse = true;
-        
+
         if (hoveredV && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseTrue = true;
         if (hoveredF && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseFalse = true;
-        
+
         if (choseTrue || choseFalse) {
             bool answer = choseTrue;
             if (answer == currentQuestion.correctAnswer) {
@@ -904,9 +971,33 @@ void UpdateGameplayScreen(void) {
                 isPropositionActive = false;
                 activeBarrierChallengeIdx = -1;
                 lastInteractedBarrierIdx = -1;
+
+                // Gate combo: quick sequential correct answers earn +1 vida
+                bool wasQuick = (propositionTimer <= GATE_QUICK_THRESHOLD);
+                if (wasQuick && gateComboWindow > 0.0f) {
+                    gateStreak++;
+                } else {
+                    gateStreak = wasQuick ? 1 : 0;
+                }
+                if (wasQuick) gateComboWindow = GATE_COMBO_WINDOW;
+                if (gateStreak >= 3) {
+                    if (globalLives < 3) {
+                        globalLives++;
+                        gateComboFeedbackTimer = 1.8f;
+                    }
+                    gateStreak      = 0;
+                    gateComboWindow = 0.0f;
+                }
             } else {
-                // Incorrect answer! Start 5 second cooldown
+                // Incorrect answer! Start cooldown and reset combo streak
                 errorCooldownTimer = 3.0f;
+                gateStreak         = 0;
+                gateComboWindow    = 0.0f;
+                globalLives--;
+                if (globalLives <= 0) {
+                    globalLives = 0;
+                    gameOver    = true;
+                }
             }
         }
         return;
@@ -916,7 +1007,13 @@ void UpdateGameplayScreen(void) {
     
     // Normal Gameplay loop
     float dt = GetFrameTime();
-    
+
+    if (gateComboFeedbackTimer > 0.0f) gateComboFeedbackTimer -= dt;
+    if (gateComboWindow > 0.0f) {
+        gateComboWindow -= dt;
+        if (gateComboWindow <= 0.0f) { gateComboWindow = 0.0f; gateStreak = 0; }
+    }
+
     // Update timer
     gameTimer += dt;
     globalTimer += dt;
@@ -985,6 +1082,7 @@ void UpdateGameplayScreen(void) {
                 activeBarrierChallengeIdx = i;
                 lastInteractedBarrierIdx = i;
                 GeneratePropositionForGate(b->type);
+                propositionTimer = 0.0f;
                 break;
             }
         }
@@ -1152,14 +1250,32 @@ void DrawGameplayScreen(void) {
     DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
     
     // Floating Glassmorphic HUD overlay top panel
-    DrawUnifiedHUD("FASE 2: LABIRINTO", currentLevelName, "ESC: Pausar | WASD/Setas: Mover");
-    
-    // Draw level objective at the bottom center
-    const char* objText = currentObjective;
-    int textW = MeasureText(objText, 14);
-    Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 45, textW + 40, 30 };
-    DrawThemeGlassPanel(tooltip, 0.25f, ColorAlpha(COLOR_TEXT_MUTED, 0.4f));
-    DrawText(objText, tooltip.x + 20, tooltip.y + 8, 14, COLOR_TEXT_MAIN);
+    DrawUnifiedHUD("FASE 2: LABIRINTO", currentLevelName, NULL);
+
+    // Draw level objective just above bottom bar
+    {
+        const char* objText = currentObjective;
+        int textW = MeasureText(objText, 14);
+        Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 72, textW + 40, 26 };
+        DrawThemeGlassPanel(tooltip, 0.25f, ColorAlpha(COLOR_TEXT_MUTED, 0.4f));
+        DrawText(objText, tooltip.x + 20, tooltip.y + 6, 14, COLOR_TEXT_MAIN);
+    }
+
+    // Bottom command bar
+#ifdef __APPLE__
+    DrawBottomHUD("WASD / Setas: Mover  |  V: Verdadeiro  |  F: Falso  |  ESC: Pausar  |  Ctrl+F: Fullscreen");
+#else
+    DrawBottomHUD("WASD / Setas: Mover  |  V: Verdadeiro  |  F: Falso  |  ESC: Pausar  |  F11: Fullscreen");
+#endif
+
+    // Combo life-gain feedback
+    if (gateComboFeedbackTimer > 0.0f) {
+        float a = gateComboFeedbackTimer > 0.5f ? 1.0f : gateComboFeedbackTimer * 2.0f;
+        const char *msg = "+1 VIDA!  COMBO DE PORTAS!";
+        int mw = MeasureText(msg, 36);
+        DrawText(msg, SCREEN_WIDTH / 2 - mw / 2, SCREEN_HEIGHT / 2 - 80, 36,
+                 ColorAlpha(COLOR_NEON_GREEN, a));
+    }
     
     // Draw Intro Pop-up Overlay
     if (isIntroActive) {
