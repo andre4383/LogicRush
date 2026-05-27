@@ -83,7 +83,7 @@ void DrawPhaseBanner(void) {
 void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const char* helpText) {
     // Glassmorphic top panel
     DrawThemeGlassPanel((Rectangle){ 15, 10, SCREEN_WIDTH - 30, 48 }, 0.20f, ColorAlpha(COLOR_GRID_LINE, 0.25f));
-    
+
     // Left: Game name & active phase
     char titleText[128];
     if (phaseSubtitle && phaseSubtitle[0] != '\0') {
@@ -92,22 +92,50 @@ void DrawUnifiedHUD(const char* phaseTitle, const char* phaseSubtitle, const cha
         sprintf(titleText, "LOGIC RUSH: %s", phaseTitle);
     }
     DrawText(titleText, 35, 24, 18, COLOR_TEXT_CYBER);
-    
-    // Middle: Help text
-    if (helpText) {
-        int helpW = MeasureText(helpText, 13);
-        DrawText(helpText, SCREEN_WIDTH / 2 - helpW / 2, 27, 13, COLOR_TEXT_MUTED);
-    }
-    
+
+    (void)helpText; // commands moved to DrawBottomHUD
+
     // Middle-Right: Timer
     char timerText[32];
     sprintf(timerText, "TEMPO: %.1f s", globalTimer);
-    DrawText(timerText, SCREEN_WIDTH - 380, 24, 18, COLOR_TEXT_MAIN);
-    
+    DrawText(timerText, SCREEN_WIDTH - 430, 24, 18, COLOR_TEXT_MAIN);
+
     // Right: Score
     char scoreText[32];
     sprintf(scoreText, "SCORE: %05d", globalScore);
-    DrawText(scoreText, SCREEN_WIDTH - 180, 24, 18, COLOR_NEON_GOLD);
+    DrawText(scoreText, SCREEN_WIDTH - 250, 24, 18, COLOR_NEON_GOLD);
+
+    // Far-right: Lives as hearts
+    int hStartX = SCREEN_WIDTH - 110;
+    int hY = 19;
+    for (int i = 0; i < 3; i++) {
+        Color hCol = (i < globalLives) ? COLOR_NEON_GREEN
+                                       : ColorAlpha(COLOR_TEXT_MUTED, 0.22f);
+        float hx = (float)(hStartX + i * 26);
+        float hy = (float)hY;
+        // Heart: two overlapping circles on top + downward triangle
+        DrawCircle((int)(hx + 5),  (int)(hy + 5), 5.5f, hCol);
+        DrawCircle((int)(hx + 13), (int)(hy + 5), 5.5f, hCol);
+        DrawTriangle(
+            (Vector2){hx - 1.0f,        hy + 7.0f},
+            (Vector2){hx + 19.0f,       hy + 7.0f},
+            (Vector2){hx + 9.0f,        hy + 19.0f},
+            hCol);
+        // Glow for active lives
+        if (i < globalLives)
+            DrawCircle((int)(hx + 9), (int)(hy + 9), 11.0f,
+                       ColorAlpha(hCol, 0.10f));
+    }
+}
+
+// Bottom HUD bar — commands/controls for the active phase
+void DrawBottomHUD(const char* commands) {
+    DrawThemeGlassPanel((Rectangle){ 15, SCREEN_HEIGHT - 35, SCREEN_WIDTH - 30, 28 },
+                        0.20f, ColorAlpha(COLOR_GRID_LINE, 0.15f));
+    if (commands) {
+        int w = MeasureText(commands, 13);
+        DrawText(commands, SCREEN_WIDTH / 2 - w / 2, SCREEN_HEIGHT - 28, 13, COLOR_TEXT_MUTED);
+    }
 }
 
 // Quiz lifecycle wrappers
@@ -198,8 +226,12 @@ void DrawQuizScreen(void) {
     
     MemoryGame_Draw(&quizCtx);
     
-    // Draw unified top HUD
-    DrawUnifiedHUD("FASE 1: QUIZ", "EQUIVALÊNCIAS", "ESC: Voltar ao Menu | Combine as equivalências corretas");
+    DrawUnifiedHUD("FASE 1: QUIZ", "EQUIVALÊNCIAS", NULL);
+#ifdef __APPLE__
+    DrawBottomHUD("ESC: Pausar  |  Clique nas cartas para combinar  |  Ctrl+F: Fullscreen");
+#else
+    DrawBottomHUD("ESC: Pausar  |  Clique nas cartas para combinar  |  F11: Fullscreen");
+#endif
     
     // Draw Game Over overlay if needed
     if (quizCtx.state == STATE_GAME_OVER) {
@@ -317,8 +349,12 @@ void DrawPauseOverlay(void) {
 }
 
 void UpdateGame(void) {
-    // Fullscreen toggle
+    // Fullscreen toggle (F11 on Windows/Linux; Ctrl+F on macOS — F11 lowers volume on Mac)
+#ifdef __APPLE__
+    if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_F)) ToggleFullscreen();
+#else
     if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
+#endif
 
     if (gamePaused) {
         if (IsKeyPressed(KEY_ESCAPE)) {

@@ -56,9 +56,12 @@ typedef struct {
     MgPhase phase;
     float   phaseTimer;
     bool    passed;
-    int     wrongStreak;   // equal gets angrier with wrong streaks
-    float   wrongFlashT;   // white flash on wrong match
+    int     wrongStreak;      // equal gets angrier with wrong streaks
+    float   wrongFlashT;      // white flash on wrong match
     float   correctFlashT;
+    int     correctStreak;    // consecutive correct pairs for life-gain combo
+    float   comboTimer;       // time window between pairs; resets streak when 0
+    float   comboFeedbackTimer; // shows "+1 VIDA!" feedback when > 0
 } MemoryGameState;
 
 extern MemoryGameState mgState;

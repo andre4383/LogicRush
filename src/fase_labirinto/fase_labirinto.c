@@ -124,6 +124,14 @@ static int lastInteractedBarrierIdx = -1;
 static bool gameOver = false;
 static float errorCooldownTimer = 0.0f;
 
+// Gate combo — answer 3 gates quickly in sequence to gain 1 life
+#define GATE_QUICK_THRESHOLD 5.0f  // max seconds to answer and count as "quick"
+#define GATE_COMBO_WINDOW   12.0f  // max seconds between consecutive quick answers
+static int   gateStreak     = 0;
+static float propositionTimer = 0.0f;   // time since current proposition became active
+static float gateComboWindow  = 0.0f;   // countdown; reset streak when 0
+static float gateComboFeedbackTimer = 0.0f;
+
 typedef struct {
     char questionText[256];
     bool correctAnswer; // true = V, false = F
@@ -647,6 +655,10 @@ static void ResetLevel(void) {
     errorCooldownTimer = 0.0f;
     activeBarrierChallengeIdx = -1;
     lastInteractedBarrierIdx = -1;
+    gateStreak            = 0;
+    propositionTimer      = 0.0f;
+    gateComboWindow       = 0.0f;
+    gateComboFeedbackTimer = 0.0f;
     enemySpawnDelay = 3.0f;
     enemyPathLen = 0;
     enemyPathUpdateTimer = 0;
@@ -831,6 +843,7 @@ void UpdateGameplayScreen(void) {
         if (errorCooldownTimer > 0.0f) {
             float dt = GetFrameTime();
             errorCooldownTimer -= dt;
+            propositionTimer   += dt;
             
             // The virus keeps updating and can capture the player!
             UpdateEnemy(dt);
@@ -886,13 +899,24 @@ void UpdateGameplayScreen(void) {
         
         bool choseTrue = false;
         bool choseFalse = false;
-        
+
+        propositionTimer += GetFrameTime();
+
+        // Combo window decay
+        if (gateComboWindow > 0.0f) {
+            gateComboWindow -= GetFrameTime();
+            if (gateComboWindow <= 0.0f) {
+                gateComboWindow = 0.0f;
+                gateStreak      = 0;
+            }
+        }
+
         if (IsKeyPressed(KEY_V)) choseTrue = true;
         if (IsKeyPressed(KEY_F)) choseFalse = true;
-        
+
         if (hoveredV && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseTrue = true;
         if (hoveredF && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) choseFalse = true;
-        
+
         if (choseTrue || choseFalse) {
             bool answer = choseTrue;
             if (answer == currentQuestion.correctAnswer) {
@@ -904,9 +928,28 @@ void UpdateGameplayScreen(void) {
                 isPropositionActive = false;
                 activeBarrierChallengeIdx = -1;
                 lastInteractedBarrierIdx = -1;
+
+                // Gate combo: quick sequential correct answers earn +1 vida
+                bool wasQuick = (propositionTimer <= GATE_QUICK_THRESHOLD);
+                if (wasQuick && gateComboWindow > 0.0f) {
+                    gateStreak++;
+                } else {
+                    gateStreak = wasQuick ? 1 : 0;
+                }
+                if (wasQuick) gateComboWindow = GATE_COMBO_WINDOW;
+                if (gateStreak >= 3) {
+                    if (globalLives < 3) {
+                        globalLives++;
+                        gateComboFeedbackTimer = 1.8f;
+                    }
+                    gateStreak      = 0;
+                    gateComboWindow = 0.0f;
+                }
             } else {
-                // Incorrect answer! Start 5 second cooldown
+                // Incorrect answer! Start cooldown and reset combo streak
                 errorCooldownTimer = 3.0f;
+                gateStreak         = 0;
+                gateComboWindow    = 0.0f;
             }
         }
         return;
@@ -916,7 +959,13 @@ void UpdateGameplayScreen(void) {
     
     // Normal Gameplay loop
     float dt = GetFrameTime();
-    
+
+    if (gateComboFeedbackTimer > 0.0f) gateComboFeedbackTimer -= dt;
+    if (gateComboWindow > 0.0f) {
+        gateComboWindow -= dt;
+        if (gateComboWindow <= 0.0f) { gateComboWindow = 0.0f; gateStreak = 0; }
+    }
+
     // Update timer
     gameTimer += dt;
     globalTimer += dt;
@@ -985,6 +1034,7 @@ void UpdateGameplayScreen(void) {
                 activeBarrierChallengeIdx = i;
                 lastInteractedBarrierIdx = i;
                 GeneratePropositionForGate(b->type);
+                propositionTimer = 0.0f;
                 break;
             }
         }
@@ -1152,14 +1202,32 @@ void DrawGameplayScreen(void) {
     DrawThemeVignette(SCREEN_WIDTH, SCREEN_HEIGHT);
     
     // Floating Glassmorphic HUD overlay top panel
-    DrawUnifiedHUD("FASE 2: LABIRINTO", currentLevelName, "ESC: Pausar | WASD/Setas: Mover");
-    
-    // Draw level objective at the bottom center
-    const char* objText = currentObjective;
-    int textW = MeasureText(objText, 14);
-    Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 45, textW + 40, 30 };
-    DrawThemeGlassPanel(tooltip, 0.25f, ColorAlpha(COLOR_TEXT_MUTED, 0.4f));
-    DrawText(objText, tooltip.x + 20, tooltip.y + 8, 14, COLOR_TEXT_MAIN);
+    DrawUnifiedHUD("FASE 2: LABIRINTO", currentLevelName, NULL);
+
+    // Draw level objective just above bottom bar
+    {
+        const char* objText = currentObjective;
+        int textW = MeasureText(objText, 14);
+        Rectangle tooltip = { SCREEN_WIDTH / 2.0f - textW / 2.0f - 20, SCREEN_HEIGHT - 72, textW + 40, 26 };
+        DrawThemeGlassPanel(tooltip, 0.25f, ColorAlpha(COLOR_TEXT_MUTED, 0.4f));
+        DrawText(objText, tooltip.x + 20, tooltip.y + 6, 14, COLOR_TEXT_MAIN);
+    }
+
+    // Bottom command bar
+#ifdef __APPLE__
+    DrawBottomHUD("WASD / Setas: Mover  |  V: Verdadeiro  |  F: Falso  |  ESC: Pausar  |  Ctrl+F: Fullscreen");
+#else
+    DrawBottomHUD("WASD / Setas: Mover  |  V: Verdadeiro  |  F: Falso  |  ESC: Pausar  |  F11: Fullscreen");
+#endif
+
+    // Combo life-gain feedback
+    if (gateComboFeedbackTimer > 0.0f) {
+        float a = gateComboFeedbackTimer > 0.5f ? 1.0f : gateComboFeedbackTimer * 2.0f;
+        const char *msg = "+1 VIDA!  COMBO DE PORTAS!";
+        int mw = MeasureText(msg, 36);
+        DrawText(msg, SCREEN_WIDTH / 2 - mw / 2, SCREEN_HEIGHT / 2 - 80, 36,
+                 ColorAlpha(COLOR_NEON_GREEN, a));
+    }
     
     // Draw Intro Pop-up Overlay
     if (isIntroActive) {

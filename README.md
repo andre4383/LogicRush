@@ -20,6 +20,18 @@ The experience is inspired by high-energy "party games" and features a cycling d
 ### Meeting Equal (Boss Fight):
 - Face the AI directly as she hurls complex logical expressions at you, Simplify these expressions using cubes to repair the data and reflect the damage back at her
 
+## Sistema de Vidas
+
+O jogador começa com **3 vidas** compartilhadas entre todas as fases.
+
+| Fase | Como ganhar vida | Condição |
+|------|-----------------|----------|
+| Fase 1 — Memory Cards | Acertar **3 pares seguidos** | Cada par deve ser encontrado dentro de 8 s do anterior; errar um par reseta o combo |
+| Fase 2 — Entangled Circuitry | Responder **3 portões corretos em sequência** | Cada resposta deve ser dada em até 5 s após a questão aparecer; resposta errada reseta o combo |
+| Fase 3 — Meeting Equal | **Não ganha vida** | — |
+
+---
+
 ## Placar de Líderes ao Vivo
 
 O Logic Rush inclui um **visualizador de placar independente** que pode rodar em paralelo com o jogo — ideal para eventos, apresentações ou um segundo monitor.

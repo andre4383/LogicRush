@@ -103,9 +103,12 @@ void MemoryGame_Init(GameCtx *ctx)
     mgState.sel[0]      = -1;
     mgState.sel[1]      = -1;
     mgState.selCount    = 0;
-    mgState.phase       = MG_PHASE_SHOW;
-    mgState.passed      = false;
-    mgState.wrongStreak = 0;
+    mgState.phase             = MG_PHASE_SHOW;
+    mgState.passed            = false;
+    mgState.wrongStreak       = 0;
+    mgState.correctStreak     = 0;
+    mgState.comboTimer        = 0.0f;
+    mgState.comboFeedbackTimer = 0.0f;
 
     // Show time shortens with cycles
     float showTime = 2.5f - ctx->cycle * 0.3f;
@@ -177,9 +180,19 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
     }
 
     // Decay flash timers
-    if (mgState.wrongFlashT   > 0) mgState.wrongFlashT   -= dt;
-    if (mgState.correctFlashT > 0) mgState.correctFlashT -= dt;
-    if (ctx->hurtTimer        > 0) ctx->hurtTimer        -= dt;
+    if (mgState.wrongFlashT      > 0) mgState.wrongFlashT      -= dt;
+    if (mgState.correctFlashT    > 0) mgState.correctFlashT    -= dt;
+    if (ctx->hurtTimer           > 0) ctx->hurtTimer           -= dt;
+    if (mgState.comboFeedbackTimer > 0) mgState.comboFeedbackTimer -= dt;
+
+    // Combo window timeout — break streak if player was too slow
+    if (mgState.comboTimer > 0) {
+        mgState.comboTimer -= dt;
+        if (mgState.comboTimer <= 0.0f) {
+            mgState.comboTimer    = 0.0f;
+            mgState.correctStreak = 0;
+        }
+    }
 
     switch (mgState.phase)
     {
@@ -258,6 +271,18 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     ctx->mood       = EQUAL_HURT;
                     ctx->moodTimer  = 0.6f;
                     ctx->hurtTimer  = 0.6f;
+                    // Combo streak tracking — 3 correct pairs within 8s = +1 vida
+                    mgState.correctStreak++;
+                    mgState.comboTimer = 8.0f;
+                    if (mgState.correctStreak >= 3) {
+                        if (ctx->lives < 3) {
+                            ctx->lives++;
+                            globalLives = ctx->lives;
+                            mgState.comboFeedbackTimer = 1.8f;
+                        }
+                        mgState.correctStreak = 0;
+                        mgState.comboTimer    = 0.0f;
+                    }
                 }
                 else
                 {
@@ -266,8 +291,10 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     mgState.cards[b].selected = false;
                     StartFlipDown(a);
                     StartFlipDown(b);
-                    mgState.wrongFlashT  = 0.4f;
+                    mgState.wrongFlashT   = 0.4f;
                     mgState.wrongStreak++;
+                    mgState.correctStreak = 0;
+                    mgState.comboTimer    = 0.0f;
 
                     // Equal gets angrier (NOT damaged) when player misses
                     if (mgState.wrongStreak >= 3)
@@ -473,14 +500,12 @@ void MemoryGame_Draw(GameCtx *ctx)
     for (int y = 0; y < SCREEN_H; y += 4)
         DrawLine(0, y, SCREEN_W, y, ColorAlpha(COL_PANEL, 0.18f));
 
-    // HUD
-    DrawText(TextFormat("VIDAS: %d", ctx->lives),
-             35, 75, 16, COL_CORRECT);
+    // Pairs info below top HUD
     DrawText(TextFormat("PARES: %d / %d  (PRECISA DE %d)",
                         mgState.pairsFound,
                         mgState.pairsTotal,
                         mgState.pairsNeeded),
-             180, 75, 16, COL_TEXT);
+             35, 75, 16, COL_TEXT);
 
     // Phase label
     const char *phaseLabel = "";
@@ -508,7 +533,7 @@ void MemoryGame_Draw(GameCtx *ctx)
     }
     DrawText(phaseLabel,
              SCREEN_W / 2 - MeasureText(phaseLabel, 26) / 2,
-             SCREEN_H - 36, 26, phaseColor);
+             SCREEN_H - 76, 26, phaseColor);
 
     // Wrong flash overlay
     if (mgState.wrongFlashT > 0)
@@ -539,6 +564,17 @@ void MemoryGame_Draw(GameCtx *ctx)
 
     // Equal on the right
     Equal_Draw(ctx, SCREEN_W * 0.83f, SCREEN_H * 0.48f, 1.0f);
+
+    // Combo life-gain feedback
+    if (mgState.comboFeedbackTimer > 0) {
+        float a = mgState.comboFeedbackTimer > 0.5f ? 1.0f : mgState.comboFeedbackTimer * 2.0f;
+        const char *comboMsg = "+1 VIDA!  COMBO!";
+        int cw = MeasureText(comboMsg, 36);
+        DrawText(comboMsg,
+                 SCREEN_W / 2 - cw / 2,
+                 SCREEN_H / 2 - 80,
+                 36, ColorAlpha(COL_CORRECT, a));
+    }
 
     // "ERRADO" text when wrong (like concept art)
     if (mgState.wrongFlashT > 0)
