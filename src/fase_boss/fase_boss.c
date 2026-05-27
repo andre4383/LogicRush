@@ -734,7 +734,8 @@ static void SpawnCube(void) {
     // Seleciona proposição
     // No estágio 3, intercala 50% V/F (estágio 2) para aliviar a dificuldade
     int targetStage = boss.currentStage;
-    if (boss.currentStage == 3 && (RandRange(0, 2) == 0)) {
+    // Alívio de dificuldade: 50% chance de estágio 2 no estágio 3, apenas nos primeiros 2 loops
+    if (boss.currentStage == 3 && competitiveLoop < 2 && (RandRange(0, 2) == 0)) {
         targetStage = 2;
     }
     int idx = -1;
@@ -792,9 +793,12 @@ static void SpawnCube(void) {
     }
 
     // ── Velocidade horizontal: percurso de CUBE_SPAWN_X até CUBE_DEATH_X ─────────
+    // A cada loop o tempo diminui 0.8s (blocos mais rápidos)
     float travelDist = CUBE_DEATH_X - CUBE_SPAWN_X;
-    float timeWindow = (boss.currentStage == 1) ? CUBE_TIME_S1 :
-                       (boss.currentStage == 2) ? CUBE_TIME_S2 : CUBE_TIME_S3;
+    float loopSpeedup = (float)competitiveLoop * 0.8f;
+    float timeWindow = (boss.currentStage == 1) ? fmaxf(4.0f, CUBE_TIME_S1 - loopSpeedup) :
+                       (boss.currentStage == 2) ? fmaxf(3.5f, CUBE_TIME_S2 - loopSpeedup) :
+                                                  fmaxf(3.0f, CUBE_TIME_S3 - loopSpeedup);
     float spd = (travelDist / timeWindow) * 1.08f;
 
     cubes[slot].prop          = p;
@@ -830,7 +834,7 @@ static void ApplyAnswer(int cubeIdx, int chosenOption) {
 
     if (correct) {
         boss.bossHP -= BOSS_DAMAGE;
-        globalScore += 100 * boss.currentStage;
+        globalScore += 100 * boss.currentStage * scoreMultiplier;
         boss.shieldTimer  = 0.85f;
         boss.shieldPos    = (Vector2){ PLAYER_CENTER_X - 80.0f, PLAYER_CENTER_Y };
         playerBlockTimer  = 0.85f;
@@ -937,15 +941,18 @@ void UpdateBossScreen(void) {
                 boss.phase = BPHASE_STORY_VICTORY_POPUP;
             }
         } else {
-            // Modo Competitivo: comportamento original
+            // Modo Competitivo: loop para próximo ciclo com dificuldade maior
             if (!rankingTriggeredBoss) {
                 rankingTriggeredBoss = true;
-                Ranking_ScreenEnter(globalScore, globalTimer, 3);
-                currentScreen = SCREEN_RANKING;
-            }
-            if (IsKeyPressed(KEY_ENTER)) {
-                rankingTriggeredBoss = false;
-                currentScreen = SCREEN_TITLE;
+                competitiveLoop++;
+                scoreMultiplier = competitiveLoop + 1;
+                static char loopTitle[32];
+                static char loopSubtitle[52];
+                snprintf(loopTitle,    sizeof(loopTitle),    "CICLO %d", competitiveLoop + 1);
+                snprintf(loopSubtitle, sizeof(loopSubtitle), "MULTIPLICADOR x%d  DIFICULDADE+", scoreMultiplier);
+                InitQuizScreen();
+                StartPhaseBanner(loopTitle, loopSubtitle);
+                currentScreen = SCREEN_QUIZ;
             }
         }
         return;
@@ -988,10 +995,14 @@ void UpdateBossScreen(void) {
         if (boss.phaseTimer <= 0.0f) boss.phase = BPHASE_FIGHTING;
     }
 
-    // Estágio
-    if (boss.bossHP > BOSS_HP_STAGE2)      boss.currentStage = 1;
-    else if (boss.bossHP > BOSS_HP_STAGE3) boss.currentStage = 2;
-    else                                    boss.currentStage = 3;
+    // Estágio — thresholds sobem a cada loop: estágios difíceis aparecem mais cedo
+    int effStage2 = BOSS_HP_STAGE2 + competitiveLoop * 12;
+    if (effStage2 > 90) effStage2 = 90;
+    int effStage3 = BOSS_HP_STAGE3 + competitiveLoop * 17;
+    if (effStage3 > effStage2 - 8) effStage3 = effStage2 - 8;
+    if      (boss.bossHP > effStage2) boss.currentStage = 1;
+    else if (boss.bossHP > effStage3) boss.currentStage = 2;
+    else                               boss.currentStage = 3;
 
     boss.spawnCooldown = (boss.currentStage == 1) ? SPAWN_RATE_S1 :
                           (boss.currentStage == 2) ? SPAWN_RATE_S2 : SPAWN_RATE_S3;

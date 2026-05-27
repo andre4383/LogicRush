@@ -77,6 +77,8 @@ void UpdateTitleScreen(void) {
         globalTimer = 0.0f;
         globalScore = 0;
         globalLives = 3;
+        competitiveLoop = 0;
+        scoreMultiplier = 1;
         gameRunning = true;
         gamePaused  = false;
         currentGameMode = MODE_STORY;
@@ -90,6 +92,8 @@ void UpdateTitleScreen(void) {
         globalTimer = 0.0f;
         globalScore = 0;
         globalLives = 3;
+        competitiveLoop = 0;
+        scoreMultiplier = 1;
         gameRunning = true;
         gamePaused  = false;
         currentGameMode = MODE_COMPETITIVE;
@@ -103,7 +107,9 @@ void UpdateTitleScreen(void) {
     if (dbg1Hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         globalTimer = 0.0f;
         globalScore = 0;
-        globalLives = 3;  // reset lives for new game
+        globalLives = 3;
+        competitiveLoop = 0;
+        scoreMultiplier = 1;
         gameRunning = true;
         gamePaused  = false;
         InitQuizScreen();

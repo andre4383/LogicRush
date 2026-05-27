@@ -10,24 +10,24 @@
 // ==================================================================================
 // Use these constants to keep color schemes and visual assets unified across screens.
 
-// Core Palettes
-#define COLOR_BG_DARK           (Color){ 10, 15, 26, 255 }     // Cyber Cadet deep blue-black
-#define COLOR_PANEL_BG          (Color){ 13, 20, 35, 255 }     // Card background
-#define COLOR_PANEL_BORDER      (Color){ 20, 30, 50, 255 }     // Default tech border
-#define COLOR_GRID_LINE         (Color){ 59, 130, 246, 255 }   // Blue tech grid lines
+// Core Palettes — Cobalt Copper
+#define COLOR_BG_DARK           (Color){ 9, 11, 28, 255 }      // Fundo espacial azul cobalto profundo
+#define COLOR_PANEL_BG          (Color){ 15, 18, 42, 255 }     // Fundo de painéis glassmorphism
+#define COLOR_PANEL_BORDER      (Color){ 28, 35, 74, 255 }     // Bordas sutis cobalto
+#define COLOR_GRID_LINE         (Color){ 67, 97, 238, 255 }    // Grade de circuito azul cobalto
 
-// Neon Glow Colors
-#define COLOR_NEON_CYAN         (Color){ 34, 211, 238, 255 }   // Laser/Wires/Trails
-#define COLOR_NEON_GREEN        (Color){ 34, 197, 94, 255 }    // Active states/Player
-#define COLOR_NEON_RED          (Color){ 239, 68, 68, 255 }    // Inactive states
-#define COLOR_NEON_PURPLE       (Color){ 168, 85, 247, 255 }   // Gates/Portals
-#define COLOR_NEON_MAGENTA      (Color){ 217, 70, 239, 255 }   // Gates/Portals (Alt)
-#define COLOR_NEON_GOLD         (Color){ 234, 179, 8, 255 }    // OR Gate/Warning lines
+// Neon Glow Colors — Cobalt Copper
+#define COLOR_NEON_CYAN         (Color){ 217, 100, 48, 255 }   // Cobre primário (acento principal)
+#define COLOR_NEON_GREEN        (Color){ 0, 180, 135, 255 }    // Verde-azulado/Teal (HP/acertos)
+#define COLOR_NEON_RED          (Color){ 210, 75, 55, 255 }    // Cobre de alerta (erros/dano)
+#define COLOR_NEON_PURPLE       (Color){ 139, 92, 246, 255 }   // Roxo cobre (portas lógicas)
+#define COLOR_NEON_MAGENTA      (Color){ 168, 85, 247, 255 }   // Roxo cobre alternativo
+#define COLOR_NEON_GOLD         (Color){ 244, 180, 96, 255 }   // Ouro/Cobre claro (HP médio)
 
-// Typography / Text Colors
-#define COLOR_TEXT_MAIN         (Color){ 241, 245, 249, 255 }  // High contrast white
-#define COLOR_TEXT_MUTED        (Color){ 148, 163, 184, 255 }  // Muted gray-slate
-#define COLOR_TEXT_CYBER        (Color){ 96, 165, 250, 255 }   // Tech highlight blue
+// Typography / Text Colors — Cobalt Copper
+#define COLOR_TEXT_MAIN         (Color){ 238, 242, 255, 255 }  // Branco gelo azulado
+#define COLOR_TEXT_MUTED        (Color){ 165, 180, 252, 255 }  // Azul lavanda suave
+#define COLOR_TEXT_CYBER        (Color){ 217, 100, 48, 255 }   // Cobre (destaque técnico)
 
 // Layout / Grid Constants
 #define CELL_SIZE               40                             // Size of grid cell in pixels

@@ -88,12 +88,18 @@ void MemoryGame_Init(GameCtx *ctx)
     srand((unsigned int)time(NULL));
     memset(&mgState, 0, sizeof(mgState));
 
-    // Scale difficulty with cycle:
-    // cycle 0 → 4 pairs (8 cards), cycle 1 → 6 pairs, cycle 2+ → 8 pairs
+    // Scale difficulty with cycle and competitive loop
+    // Loop 0: ciclo 0→4 pares, ciclo 1→6, ciclo 2+→8
+    // Loop 1+: começa com mais cards e aumenta a cada loop (máx 12)
     int pairs;
-    if (ctx->cycle == 0)      pairs = 4;
-    else if (ctx->cycle == 1) pairs = 6;
-    else                      pairs = 8;
+    if (competitiveLoop == 0) {
+        if (ctx->cycle == 0)      pairs = 4;
+        else if (ctx->cycle == 1) pairs = 6;
+        else                      pairs = 8;
+    } else {
+        pairs = 6 + competitiveLoop * 2;
+        if (pairs > 12) pairs = 12;  // MG_MAX_CARDS = 24, então max 12 pares
+    }
 
     // pairsNeeded: must find at least ceil(pairs * 0.6) to pass
     mgState.pairsTotal  = pairs;
@@ -114,13 +120,13 @@ void MemoryGame_Init(GameCtx *ctx)
     mgState.pendingFlipA       = -1;
     mgState.pendingFlipB       = -1;
 
-    // Show time shortens with cycles
-    float showTime = 2.5f - ctx->cycle * 0.3f;
-    if (showTime < 0.8f) showTime = 0.8f;
+    // Show time diminui com ciclos e loops (mínimo 0.5s)
+    float showTime = 2.5f - ctx->cycle * 0.3f - (float)competitiveLoop * 0.4f;
+    if (showTime < 0.5f) showTime = 0.5f;
     mgState.phaseTimer  = showTime;
 
-    // Time limit to solve the memory game
-    mgState.playTimeMax  = 30.0f;
+    // Tempo hábil diminui a cada loop (mínimo 12s)
+    mgState.playTimeMax  = fmaxf(12.0f, 30.0f - (float)competitiveLoop * 3.0f);
     mgState.playTimeLeft = mgState.playTimeMax;
 
     // Build symbol list (pairs of symbols)
@@ -300,16 +306,17 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     mgState.cards[a].matchSmokeTimer = 1.0f;
                     mgState.cards[b].matchSmokeTimer = 1.0f;
                     mgState.pairsFound++;
-                    globalScore += 100;
+                    globalScore += 100 * scoreMultiplier;
                     mgState.correctFlashT = 0.4f;
                     mgState.wrongStreak   = 0;
                     // Equal takes damage when player scores a pair!
                     ctx->mood       = EQUAL_HURT;
                     ctx->moodTimer  = 0.6f;
                     ctx->hurtTimer  = 0.6f;
-                    // Combo streak tracking — 3 correct pairs within 8s = +1 vida
+                    // Combo streak tracking — 3 pares consecutivos = +1 vida
+                    // Janela do combo diminui a cada loop (mínimo 3s)
                     mgState.correctStreak++;
-                    mgState.comboTimer = 8.0f;
+                    mgState.comboTimer = fmaxf(3.0f, 8.0f - (float)competitiveLoop * 1.0f);
                     if (mgState.correctStreak >= 3) {
                         if (ctx->lives < 3) {
                             ctx->lives++;
@@ -368,7 +375,7 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
                     mgState.passed     = true;
                     mgState.phase      = MG_PHASE_RESULT;
                     mgState.phaseTimer = 2.0f;
-                    globalScore        += 500;
+                    globalScore        += 500 * scoreMultiplier;
                     ctx->mood          = EQUAL_DEFEATED;  // frame de derrota do ciborg
                 }
                 else
@@ -549,7 +556,9 @@ static void DrawCard(Card *c, bool showFace, float flashCorrect, float flashWron
     }
 
     if (faceVisible && showFace) {
-        Color sc = isMatched ? (Color){100, 40, 20, 255} : SYMBOL_COLORS[c->symbol];
+        // Loop 1+: símbolos em preto para dificultar (sem pista de cor)
+        Color sc = isMatched ? (Color){100, 40, 20, 255}
+                             : (competitiveLoop > 0 ? BLACK : SYMBOL_COLORS[c->symbol]);
         int fs = 24;
         int tw = MeasureText(SYMBOL_LABELS[c->symbol], fs);
         DrawText(SYMBOL_LABELS[c->symbol],

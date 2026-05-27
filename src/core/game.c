@@ -38,7 +38,9 @@ float globalTimer = 0.0f;
 int globalScore = 0;
 bool gameRunning = false;
 bool gamePaused = false;
-int  globalLives = 3;   // shared across phases
+int  globalLives = 3;        // shared across phases
+int  competitiveLoop = 0;    // incremented cada vez que o boss é derrotado no modo competitivo
+int  scoreMultiplier = 1;    // = competitiveLoop + 1
 
 // Phase Banner Transition Overlay System
 float phaseBannerTimer = 0.0f;
@@ -199,6 +201,8 @@ void UpdateQuizScreen(void) {
                 globalScore = 0;
                 globalTimer = 0.0f;
                 globalLives = 3;
+                competitiveLoop = 0;
+                scoreMultiplier = 1;
                 InitQuizScreen();
             }
             if (CheckCollisionPointRec(mousePos, btnMenu)) {
@@ -209,6 +213,8 @@ void UpdateQuizScreen(void) {
             globalScore = 0;
             globalTimer = 0.0f;
             globalLives = 3;
+            competitiveLoop = 0;
+            scoreMultiplier = 1;
             InitQuizScreen();
         }
         if (IsKeyPressed(KEY_ESCAPE)) {

@@ -75,7 +75,9 @@ extern float globalTimer;
 extern int globalScore;
 extern bool gameRunning;
 extern bool gamePaused;
-extern int  globalLives;  // lives shared across all phases (max 3)
+extern int  globalLives;      // lives shared across all phases (max 3)
+extern int  competitiveLoop;  // número de ciclos completos no modo competitivo (0=primeira rodada)
+extern int  scoreMultiplier;  // multiplicador de pontuação (= competitiveLoop + 1)
 
 // Phase Banner Transition Overlay System
 extern float phaseBannerTimer;
