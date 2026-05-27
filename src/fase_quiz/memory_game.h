@@ -65,6 +65,8 @@ typedef struct {
     int     correctStreak;    // consecutive correct pairs for life-gain combo
     float   comboTimer;       // time window between pairs; resets streak when 0
     float   comboFeedbackTimer; // shows "+1 VIDA!" feedback when > 0
+    int     pendingFlipA;       // delayed flip after wrong-guess burn (-1 = none)
+    int     pendingFlipB;
 } MemoryGameState;
 
 extern MemoryGameState mgState;
