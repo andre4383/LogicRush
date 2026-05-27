@@ -119,6 +119,11 @@ static float enemySpawnDelay = 3.0f;
 static int enemyPathUpdateTimer = 0;
 
 static bool isIntroActive = true;
+static int  mazeUiFocus = 0;
+static bool mazeUiWasWin = false;
+static bool mazeUiWasOver = false;
+static bool mazeUiWasIntro = false;
+static bool mazeUiWasGate = false;
 static bool isPropositionActive = false;
 static int activeBarrierChallengeIdx = -1;
 static int lastInteractedBarrierIdx = -1;
@@ -750,7 +755,19 @@ void UpdateGameplayScreen(void) {
     }
     
     if (gameWon) {
-        if (Input_PressedConfirm()) {
+        if (!mazeUiWasWin) {
+            Input_FocusReset(&mazeUiFocus, 2);
+            mazeUiWasWin = true;
+        }
+
+        Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
+        Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
+        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
+
+        Input_FocusUpdate(&mazeUiFocus, 2, 2);
+
+        if (Input_ItemPressed(0, btnNext, &mazeUiFocus, 2, 2) ||
+            (!Input_UsingGamepad() && Input_PressedConfirm())) {
             if (currentLevelIdx < MAX_LEVELS - 1) {
                 currentLevelIdx++;
                 ResetLevel();
@@ -759,36 +776,17 @@ void UpdateGameplayScreen(void) {
                 InitBossScreen();
                 StartPhaseBanner("FASE 3", "CONFRONTANDO EQUAL (BOSS FIGHT)");
             }
+            mazeUiWasWin = false;
             return;
         }
-        if (Input_PressedCancel()) {
+        if (Input_ItemPressed(1, btnMenu, &mazeUiFocus, 2, 2) || Input_PressedCancel()) {
             currentScreen = SCREEN_TITLE;
+            mazeUiWasWin = false;
             return;
-        }
-        
-        Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
-        Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
-        Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
-        Vector2 ptr = Input_GetPointer();
-        if (Input_PointerPressed()) {
-            if (CheckCollisionPointRec(ptr, btnNext)) {
-                if (currentLevelIdx < MAX_LEVELS - 1) {
-                    currentLevelIdx++;
-                    ResetLevel();
-                } else {
-                    currentScreen = SCREEN_BOSS;
-                    InitBossScreen();
-                    StartPhaseBanner("FASE 3", "CONFRONTANDO EQUAL (BOSS FIGHT)");
-                }
-                return;
-            }
-            if (CheckCollisionPointRec(ptr, btnMenu)) {
-                currentScreen = SCREEN_TITLE;
-                return;
-            }
         }
         return;
     }
+    mazeUiWasWin = false;
     
     if (gameOver) {
         static bool rankingTrigLab = false;
@@ -798,45 +796,51 @@ void UpdateGameplayScreen(void) {
             currentScreen = SCREEN_RANKING;
             return;
         }
-        if (Input_PressedConfirm()) {
-            rankingTrigLab = false;
-            ResetLevel();
-            return;
+        if (!mazeUiWasOver) {
+            Input_FocusReset(&mazeUiFocus, 2);
+            mazeUiWasOver = true;
         }
-        if (Input_PressedCancel()) {
-            currentScreen = SCREEN_TITLE;
-            return;
-        }
-        
+
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
-        Vector2 ptr = Input_GetPointer();
-        if (Input_PointerPressed()) {
-            if (CheckCollisionPointRec(ptr, btnRestart)) {
-                ResetLevel();
-                return;
-            }
-            if (CheckCollisionPointRec(ptr, btnMenu)) {
-                currentScreen = SCREEN_TITLE;
-                return;
-            }
+
+        Input_FocusUpdate(&mazeUiFocus, 2, 2);
+
+        if (Input_ItemPressed(0, btnRestart, &mazeUiFocus, 2, 2) ||
+            (!Input_UsingGamepad() && Input_PressedConfirm())) {
+            rankingTrigLab = false;
+            mazeUiWasOver = false;
+            ResetLevel();
+            return;
+        }
+        if (Input_ItemPressed(1, btnMenu, &mazeUiFocus, 2, 2) || Input_PressedCancel()) {
+            currentScreen = SCREEN_TITLE;
+            return;
         }
         return;
     }
+    mazeUiWasOver = false;
     
     if (isIntroActive) {
-        if (Input_PressedConfirm()) {
-            isIntroActive = false;
+        if (!mazeUiWasIntro) {
+            Input_FocusReset(&mazeUiFocus, 1);
+            mazeUiWasIntro = true;
         }
-        
-        Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, SCREEN_HEIGHT / 2.0f + 165, 200, 45 };
-        Vector2 ptr = Input_GetPointer();
-        if (CheckCollisionPointRec(ptr, btnRect) && Input_PointerPressed()) {
+
+        Rectangle popupRect = { SCREEN_WIDTH / 2.0f - 300, SCREEN_HEIGHT / 2.0f - 230, 600, 460 };
+        Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, popupRect.y + 390, 200, 45 };
+
+        Input_FocusUpdate(&mazeUiFocus, 1, 1);
+
+        if (Input_ItemPressed(0, btnRect, &mazeUiFocus, 1, 1) ||
+            (!Input_UsingGamepad() && Input_PressedConfirm())) {
             isIntroActive = false;
+            mazeUiWasIntro = false;
         }
         return;
     }
+    mazeUiWasIntro = false;
     
     if (isPropositionActive) {
         if (errorCooldownTimer > 0.0f) {
@@ -891,11 +895,13 @@ void UpdateGameplayScreen(void) {
         Rectangle challengeRect = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 160, 500, 300 };
         Rectangle btnV = { SCREEN_WIDTH / 2.0f - 140, challengeRect.y + 180, 120, 50 };
         Rectangle btnF = { SCREEN_WIDTH / 2.0f + 20, challengeRect.y + 180, 120, 50 };
-        
-        Vector2 ptr = Input_GetPointer();
-        bool hoveredV = CheckCollisionPointRec(ptr, btnV);
-        bool hoveredF = CheckCollisionPointRec(ptr, btnF);
-        
+
+        if (!mazeUiWasGate) {
+            Input_FocusReset(&mazeUiFocus, 2);
+            mazeUiWasGate = true;
+        }
+        Input_FocusUpdate(&mazeUiFocus, 2, 2);
+
         bool choseTrue = false;
         bool choseFalse = false;
 
@@ -913,8 +919,8 @@ void UpdateGameplayScreen(void) {
         if (Input_PressedGateTrue()) choseTrue = true;
         if (Input_PressedGateFalse()) choseFalse = true;
 
-        if (hoveredV && Input_PointerPressed()) choseTrue = true;
-        if (hoveredF && Input_PointerPressed()) choseFalse = true;
+        if (Input_ItemPressed(0, btnV, &mazeUiFocus, 2, 2)) choseTrue = true;
+        if (Input_ItemPressed(1, btnF, &mazeUiFocus, 2, 2)) choseFalse = true;
 
         if (choseTrue || choseFalse) {
             bool answer = choseTrue;
@@ -960,9 +966,8 @@ void UpdateGameplayScreen(void) {
         }
         return;
     }
-    
+    mazeUiWasGate = false;
 
-    
     // Normal Gameplay loop
     float dt = GetFrameTime();
 
@@ -1216,9 +1221,9 @@ void DrawGameplayScreen(void) {
 
     // Bottom command bar
 #ifdef __APPLE__
-    DrawBottomHUD("Stick esq./WASD: Mover  |  Y/V: Verdadeiro  X/F: Falso  |  Analógico dir.+A  |  ESC/B: Pausar  |  Ctrl+F");
+    DrawBottomHUD("Stick esq./WASD: Mover  |  Y/V ou D-pad+A: Portas  |  ESC/B: Pausar  |  Ctrl+F");
 #else
-    DrawBottomHUD("Stick esq./WASD: Mover  |  Y/V: Verdadeiro  X/F: Falso  |  Analógico dir.+A  |  ESC/B: Pausar  |  F11");
+    DrawBottomHUD("Stick esq./WASD: Mover  |  Y/V ou D-pad+A: Portas  |  ESC/B: Pausar  |  F11");
 #endif
 
     // Combo life-gain feedback
@@ -1280,9 +1285,8 @@ void DrawGameplayScreen(void) {
         
         // Button
         Rectangle btnRect = { SCREEN_WIDTH / 2.0f - 100, popupRect.y + 390, 200, 45 };
-        Vector2 ptr = Input_GetPointer();
-        bool hovered = CheckCollisionPointRec(ptr, btnRect);
-        
+        bool hovered = Input_ItemHot(0, btnRect, &mazeUiFocus, 1, 1);
+
         DrawThemeButton(btnRect, "ENTENDIDO", 16, hovered, COLOR_NEON_GREEN);
     }
     
@@ -1343,11 +1347,10 @@ void DrawGameplayScreen(void) {
             // Option buttons V (Verdadeiro) and F (Falso)
             Rectangle btnV = { SCREEN_WIDTH / 2.0f - 140, challengeRect.y + 180, 120, 50 };
             Rectangle btnF = { SCREEN_WIDTH / 2.0f + 20, challengeRect.y + 180, 120, 50 };
-            
-            Vector2 ptr = Input_GetPointer();
-            bool hoveredV = CheckCollisionPointRec(ptr, btnV);
-            bool hoveredF = CheckCollisionPointRec(ptr, btnF);
-            
+
+            bool hoveredV = Input_ItemHot(0, btnV, &mazeUiFocus, 2, 2);
+            bool hoveredF = Input_ItemHot(1, btnF, &mazeUiFocus, 2, 2);
+
             DrawThemeButton(btnV, "VERDADEIRO (V)", 14, hoveredV, COLOR_NEON_GREEN);
             DrawThemeButton(btnF, "FALSO (F)", 14, hoveredF, COLOR_NEON_RED);
             
@@ -1380,15 +1383,14 @@ void DrawGameplayScreen(void) {
         
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
-        
-        Vector2 ptr = Input_GetPointer();
-        bool hoveredRestart = CheckCollisionPointRec(ptr, btnRestart);
-        bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
-        
+
+        bool hoveredRestart = Input_ItemHot(0, btnRestart, &mazeUiFocus, 2, 2);
+        bool hoveredMenu = Input_ItemHot(1, btnMenu, &mazeUiFocus, 2, 2);
+
         DrawThemeButton(btnRestart, "REINICIAR (A/ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
         DrawThemeButton(btnMenu, "MENU (B/ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
-    
+
     // Draw Win Screen Overlay
     if (gameWon) {
         DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, ColorAlpha((Color){ 9, 13, 22, 255 }, 0.85f));
@@ -1410,18 +1412,15 @@ void DrawGameplayScreen(void) {
         
         Rectangle btnNext = { SCREEN_WIDTH / 2.0f - 180, card.y + 185, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 185, 160, 45 };
-        
-        Vector2 ptr = Input_GetPointer();
-        bool hoveredNext = CheckCollisionPointRec(ptr, btnNext);
-        bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
-        
+
+        bool hoveredNext = Input_ItemHot(0, btnNext, &mazeUiFocus, 2, 2);
+        bool hoveredMenu = Input_ItemHot(1, btnMenu, &mazeUiFocus, 2, 2);
+
         const char* btnNextLabel = isLastLevel ? "ENFRENTAR BOSS (A/ESP)" : "AVANCAR (A/ESP)";
         DrawThemeButton(btnNext, btnNextLabel, 12, hoveredNext, COLOR_NEON_GREEN);
         DrawThemeButton(btnMenu, "MENU (B/ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
 
-    Input_DrawCursor();
-    
     DrawPhaseBanner();
 }
 

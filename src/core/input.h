@@ -2,6 +2,7 @@
 #define INPUT_H
 
 #include "raylib.h"
+#include <stdbool.h>
 
 void Input_Init(void);
 void Input_Update(float dt);
@@ -20,6 +21,14 @@ bool Input_PressedGateFalse(void);
 bool Input_UsingGamepad(void);
 bool Input_IsConnected(void);
 const char *Input_GetGamepadName(void);
+
+void Input_FocusReset(int *focus, int count);
+void Input_FocusUpdate(int *focus, int count, int cols);
+typedef bool (*InputFocusSkipFn)(int index, void *user);
+void Input_FocusUpdateSkip(int *focus, int count, int cols, InputFocusSkipFn skip, void *user);
+
+bool Input_ItemHot(int index, Rectangle rect, int *focus, int count, int cols);
+bool Input_ItemPressed(int index, Rectangle rect, int *focus, int count, int cols);
 
 void Input_DrawCursor(void);
 void Input_DrawDebug(void);

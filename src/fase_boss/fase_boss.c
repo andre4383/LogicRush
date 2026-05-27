@@ -265,6 +265,7 @@ static float     feedbackTimer;
 
 static Rectangle answerCards[4];
 static int       hoveredCard;
+static int       answerFocus;
 static int       numActiveCards;
 
 static int recentProps[5];
@@ -636,6 +637,7 @@ static void UpdateCardLayout(int numCards) {
         };
     }
     numActiveCards = numCards;
+    Input_FocusReset(&answerFocus, numCards);
 }
 
 // ==================================================================================
@@ -670,6 +672,7 @@ void InitBossScreen(void) {
     feedbackCube   = -1;
     feedbackTimer  = 0.0f;
     hoveredCard    = -1;
+    answerFocus    = 0;
     numActiveCards = 0;
     UpdateCardLayout(2);
 
@@ -973,19 +976,18 @@ void UpdateBossScreen(void) {
             numActiveCards = 0;
     }
 
-    // Input
-    Vector2 ptr = Input_GetPointer();
     hoveredCard = -1;
     int acceptInput = (boss.phase == BPHASE_FIGHTING);
 
     if (acceptInput && selectedCube >= 0 && numActiveCards > 0) {
+        Input_FocusUpdate(&answerFocus, numActiveCards, numActiveCards);
         for (int i = 0; i < numActiveCards; i++) {
-            if (CheckCollisionPointRec(ptr, answerCards[i])) {
+            if (Input_ItemHot(i, answerCards[i], &answerFocus, numActiveCards, numActiveCards))
                 hoveredCard = i;
-                if (Input_PointerPressed()) {
-                    ApplyAnswer(selectedCube, i);
-                    break;
-                }
+            if (Input_ItemPressed(i, answerCards[i], &answerFocus, numActiveCards,
+                                  numActiveCards)) {
+                ApplyAnswer(selectedCube, i);
+                break;
             }
         }
     }
@@ -1395,11 +1397,11 @@ void DrawBossScreen(void) {
                           (boss.currentStage == 2) ? "ESTAGIO 2: AVANCADO"  :
                                                      "ESTAGIO 3: CRITICO!";
     DrawUnifiedHUD("FASE 3: BOSS FIGHT", stgStr,
-                   "Analógico direito + A ou mouse nas respostas");
+                   "D-pad + A ou mouse nas respostas");
 
     {
         const char *hint = (selectedCube >= 0 && feedbackTimer <= 0.0f)
-            ? "Analógico dir.+A ou mouse na resposta  |  ESC/B: Pausar"
+            ? "D-pad + A ou mouse na resposta  |  ESC/B: Pausar"
             : "Aguarde o proximo cubo...  |  ESC/B: Pausar";
         DrawBottomHUD(hint);
     }
@@ -1416,7 +1418,7 @@ void DrawBossScreen(void) {
                  ColorAlpha(COLOR_NEON_CYAN, 0.6f + sinf(t*3.5f)*0.3f));
         const char *is = "Selecione a equivalencia correta para repelir os cubos!";
         DrawText(is, SCREEN_WIDTH/2-MeasureText(is,16)/2, SCREEN_HEIGHT/2+22, 16, COLOR_TEXT_MUTED);
-        const char *is2 = "Mouse ou analógico direito + botão A.";
+        const char *is2 = "Mouse ou D-pad + botão A.";
         DrawText(is2, SCREEN_WIDTH/2-MeasureText(is2,15)/2, SCREEN_HEIGHT/2+48, 15,
                  ColorAlpha(COLOR_TEXT_MUTED,0.65f));
     }
@@ -1448,6 +1450,5 @@ void DrawBossScreen(void) {
         }
     }
 
-    Input_DrawCursor();
     DrawPhaseBanner();
 }

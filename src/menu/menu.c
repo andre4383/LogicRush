@@ -32,6 +32,8 @@ static Rectangle dbgFase3Btn = { DBG_BTN_X,
     SCREEN_HEIGHT - DBG_BTN_H,
     DBG_BTN_W, DBG_BTN_H };
 
+#define MENU_ITEM_COUNT 5
+
 static bool playHover  = false;
 static bool exitHover  = false;
 static bool dbg1Hover  = false;
@@ -39,6 +41,7 @@ static bool dbg2Hover  = false;
 static bool dbg3Hover  = false;
 static float titleGlow = 0.0f;
 static int   titleGlowDir = 1;
+static int   menuFocus = 0;
 
 void InitTitleScreen(void) {
     playHover    = false;
@@ -48,16 +51,17 @@ void InitTitleScreen(void) {
     dbg3Hover    = false;
     titleGlow    = 0.0f;
     titleGlowDir = 1;
+    Input_FocusReset(&menuFocus, MENU_ITEM_COUNT);
 }
 
 void UpdateTitleScreen(void) {
-    Vector2 ptr = Input_GetPointer();
+    Input_FocusUpdate(&menuFocus, MENU_ITEM_COUNT, 1);
 
-    playHover = CheckCollisionPointRec(ptr, playButton);
-    exitHover = CheckCollisionPointRec(ptr, exitButton);
-    dbg1Hover = CheckCollisionPointRec(ptr, dbgFase1Btn);
-    dbg2Hover = CheckCollisionPointRec(ptr, dbgFase2Btn);
-    dbg3Hover = CheckCollisionPointRec(ptr, dbgFase3Btn);
+    playHover = Input_ItemHot(0, playButton, &menuFocus, MENU_ITEM_COUNT, 1);
+    exitHover = Input_ItemHot(1, exitButton, &menuFocus, MENU_ITEM_COUNT, 1);
+    dbg1Hover = Input_ItemHot(2, dbgFase1Btn, &menuFocus, MENU_ITEM_COUNT, 1);
+    dbg2Hover = Input_ItemHot(3, dbgFase2Btn, &menuFocus, MENU_ITEM_COUNT, 1);
+    dbg3Hover = Input_ItemHot(4, dbgFase3Btn, &menuFocus, MENU_ITEM_COUNT, 1);
 
     // Anima brilho do título
     titleGlow += 0.018f * titleGlowDir;
@@ -65,7 +69,7 @@ void UpdateTitleScreen(void) {
     else if (titleGlow <= 0.0f) { titleGlow = 0.0f; titleGlowDir =  1; }
 
     // ── Botão JOGAR (fluxo normal: Fase 1) ──────────────────────────────────
-    if (playHover && Input_PointerPressed()) {
+    if (Input_ItemPressed(0, playButton, &menuFocus, MENU_ITEM_COUNT, 1)) {
         globalTimer = 0.0f;
         globalScore = 0;
         globalLives = 3;  // reset lives for new game
@@ -77,7 +81,7 @@ void UpdateTitleScreen(void) {
     }
 
     // ── Botão debug FASE 1 ───────────────────────────────────────────────────
-    if (dbg1Hover && Input_PointerPressed()) {
+    if (Input_ItemPressed(2, dbgFase1Btn, &menuFocus, MENU_ITEM_COUNT, 1)) {
         globalTimer = 0.0f;
         globalScore = 0;
         globalLives = 3;  // reset lives for new game
@@ -89,7 +93,7 @@ void UpdateTitleScreen(void) {
     }
 
     // ── Botão debug FASE 2 ───────────────────────────────────────────────────
-    if (dbg2Hover && Input_PointerPressed()) {
+    if (Input_ItemPressed(3, dbgFase2Btn, &menuFocus, MENU_ITEM_COUNT, 1)) {
         globalTimer = 0.0f;
         globalScore = 0;
         gameRunning = true;
@@ -100,7 +104,7 @@ void UpdateTitleScreen(void) {
     }
 
     // ── Botão debug FASE 3 ───────────────────────────────────────────────────
-    if (dbg3Hover && Input_PointerPressed()) {
+    if (Input_ItemPressed(4, dbgFase3Btn, &menuFocus, MENU_ITEM_COUNT, 1)) {
         globalTimer = 0.0f;
         globalScore = 0;
         gameRunning = true;
@@ -110,7 +114,7 @@ void UpdateTitleScreen(void) {
         StartPhaseBanner("FASE 3", "MEETING EQUAL");
     }
 
-    if (exitHover && Input_PointerPressed())
+    if (Input_ItemPressed(1, exitButton, &menuFocus, MENU_ITEM_COUNT, 1))
         exit(0);
 }
 
@@ -252,15 +256,13 @@ void DrawTitleScreen(void) {
 
     // 7. Rodapé
 #ifdef __APPLE__
-    const char *footer = "Mouse ou analógico direito + A  |  Ctrl+F: Tela cheia";
+    const char *footer = "Mouse ou D-pad + A  |  Ctrl+F: Tela cheia";
 #else
-    const char *footer = "Mouse ou analógico direito + A  |  F11: Tela cheia";
+    const char *footer = "Mouse ou D-pad + A  |  F11: Tela cheia";
 #endif
     int         fw     = MeasureText(footer, 14);
     DrawText(footer, SCREEN_WIDTH / 2 - fw / 2,
              SCREEN_HEIGHT - 32, 14, COLOR_TEXT_MUTED);
-
-    Input_DrawCursor();
 }
 
 void UnloadTitleScreen(void) {

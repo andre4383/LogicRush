@@ -6,15 +6,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_GAMEPAD_SLOTS    4
-#define STICK_DEADZONE       0.20f
-#define CURSOR_SPEED         520.0f
-#define RUMBLE_DAMAGE_TIME   0.35f
-#define RUMBLE_DAMAGE_STR    0.90f
-#define RUMBLE_PHASE_TIME    0.50f
-#define RUMBLE_PHASE_STR     0.65f
-#define RUMBLE_COMBO_TIME    0.20f
-#define RUMBLE_COMBO_STR     0.45f
+#define MAX_GAMEPAD_SLOTS       4
+#define STICK_DEADZONE          0.20f
+#define FOCUS_REPEAT_INITIAL    0.20f
+#define FOCUS_REPEAT_RATE       0.08f
+#define RUMBLE_DAMAGE_TIME      0.35f
+#define RUMBLE_DAMAGE_STR       0.90f
+#define RUMBLE_PHASE_TIME       0.50f
+#define RUMBLE_PHASE_STR        0.65f
+#define RUMBLE_COMBO_TIME       0.20f
+#define RUMBLE_COMBO_STR        0.45f
 
 #if defined(__APPLE__)
 #define MAPPING_PLATFORM "platform:Mac OS X"
@@ -30,11 +31,13 @@ typedef enum {
 } InputDevice;
 
 static InputDevice activeDevice = INPUT_DEVICE_MOUSE;
-static Vector2 virtualCursor = { 640.0f, 360.0f };
 static Vector2 lastMousePos = { 0.0f, 0.0f };
 static int activeGamepad = -1;
 static bool wasGamepadConnected = false;
 static bool inputDebug = false;
+
+static float focusRepeatTimer = 0.0f;
+static int focusNavHeld = 0;
 
 static int gamepadId(void) {
     return activeGamepad;
@@ -42,10 +45,6 @@ static int gamepadId(void) {
 
 static bool gamepadConnected(void) {
     return activeGamepad >= 0 && IsGamepadAvailable(activeGamepad);
-}
-
-static void recenterVirtualCursor(void) {
-    virtualCursor = (Vector2){ SCREEN_WIDTH * 0.5f, SCREEN_HEIGHT * 0.5f };
 }
 
 static bool mappingLineForPlatform(const char *line) {
@@ -126,30 +125,87 @@ static void startRumble(float duration, float strength) {
     SetGamepadVibration(gamepadId(), strength, strength, duration);
 }
 
-static void updateVirtualCursor(float dt) {
-    if (!gamepadConnected()) return;
+static void clampFocus(int *focus, int count) {
+    if (count <= 0) {
+        *focus = 0;
+        return;
+    }
+    if (*focus < 0) *focus = 0;
+    if (*focus >= count) *focus = count - 1;
+}
+
+static int moveFocusIndex(int focus, int count, int cols, int dr, int dc,
+                          InputFocusSkipFn skip, void *user) {
+    if (count <= 0) return 0;
+
+    int start = focus;
+    for (int attempt = 0; attempt < count; attempt++) {
+        if (cols <= 1) {
+            focus += dr;
+        } else if (cols >= count) {
+            focus += dc;
+        } else {
+            int row = focus / cols;
+            int col = focus % cols;
+            row += dr;
+            col += dc;
+            int rows = (count + cols - 1) / cols;
+            if (row < 0) row = rows - 1;
+            if (row >= rows) row = 0;
+            if (col < 0) col = cols - 1;
+            if (col >= cols) col = 0;
+            focus = row * cols + col;
+            if (focus >= count) focus = count - 1;
+        }
+
+        if (focus < 0) focus = count - 1;
+        if (focus >= count) focus = 0;
+
+        if (!skip || !skip(focus, user)) return focus;
+    }
+    return start;
+}
+
+static int readFocusNav(int *outDr, int *outDc) {
+    *outDr = 0;
+    *outDc = 0;
+
+    if (!gamepadConnected()) return 0;
 
     int id = gamepadId();
-    float rx = applyDeadzone(GetGamepadAxisMovement(id, GAMEPAD_AXIS_RIGHT_X));
-    float ry = applyDeadzone(GetGamepadAxisMovement(id, GAMEPAD_AXIS_RIGHT_Y));
+    int nav = 0;
 
-    if (fabsf(rx) < STICK_DEADZONE && fabsf(ry) < STICK_DEADZONE) {
-        float dx = 0.0f;
-        float dy = 0.0f;
-        if (IsGamepadButtonDown(id, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) dx -= 1.0f;
-        if (IsGamepadButtonDown(id, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) dx += 1.0f;
-        if (IsGamepadButtonDown(id, GAMEPAD_BUTTON_LEFT_FACE_UP)) dy -= 1.0f;
-        if (IsGamepadButtonDown(id, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) dy += 1.0f;
-        rx = dx;
-        ry = dy;
+    if (IsGamepadButtonPressed(id, GAMEPAD_BUTTON_LEFT_FACE_UP)) *outDr = -1;
+    if (IsGamepadButtonPressed(id, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) *outDr = 1;
+    if (IsGamepadButtonPressed(id, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) *outDc = -1;
+    if (IsGamepadButtonPressed(id, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) *outDc = 1;
+
+    float lx = applyDeadzone(GetGamepadAxisMovement(id, GAMEPAD_AXIS_LEFT_X));
+    float ly = applyDeadzone(GetGamepadAxisMovement(id, GAMEPAD_AXIS_LEFT_Y));
+    if (ly < -0.5f) *outDr = -1;
+    if (ly > 0.5f) *outDr = 1;
+    if (lx < -0.5f) *outDc = -1;
+    if (lx > 0.5f) *outDc = 1;
+
+    if (*outDr != 0 || *outDc != 0) nav = 1;
+
+    if (nav == 0) return 0;
+
+    int held = (*outDr + 2) * 3 + (*outDc + 2);
+    float dt = GetFrameTime();
+
+    if (held != focusNavHeld) {
+        focusNavHeld = held;
+        focusRepeatTimer = FOCUS_REPEAT_INITIAL;
+        return 1;
     }
 
-    virtualCursor.x += rx * CURSOR_SPEED * dt;
-    virtualCursor.y += ry * CURSOR_SPEED * dt;
-    if (virtualCursor.x < 0.0f) virtualCursor.x = 0.0f;
-    if (virtualCursor.y < 0.0f) virtualCursor.y = 0.0f;
-    if (virtualCursor.x > (float)SCREEN_WIDTH) virtualCursor.x = (float)SCREEN_WIDTH;
-    if (virtualCursor.y > (float)SCREEN_HEIGHT) virtualCursor.y = (float)SCREEN_HEIGHT;
+    focusRepeatTimer -= dt;
+    if (focusRepeatTimer <= 0.0f) {
+        focusRepeatTimer = FOCUS_REPEAT_RATE;
+        return 1;
+    }
+    return 0;
 }
 
 void Input_Init(void) {
@@ -159,23 +215,23 @@ void Input_Init(void) {
     loadGamepadMappings();
     scanActiveGamepad();
 
-    recenterVirtualCursor();
     lastMousePos = GetMousePosition();
     activeDevice = INPUT_DEVICE_MOUSE;
     wasGamepadConnected = gamepadConnected();
+    focusNavHeld = 0;
+    focusRepeatTimer = 0.0f;
 }
 
 void Input_Update(float dt) {
+    (void)dt;
     if (IsKeyPressed(KEY_F12)) inputDebug = !inputDebug;
 
-    bool connectedNow = false;
     scanActiveGamepad();
-    connectedNow = gamepadConnected();
+    bool connectedNow = gamepadConnected();
 
     if (connectedNow && !wasGamepadConnected) {
         loadGamepadMappings();
         scanActiveGamepad();
-        recenterVirtualCursor();
     }
     wasGamepadConnected = gamepadConnected();
 
@@ -187,10 +243,6 @@ void Input_Update(float dt) {
 
     if (gamepadAnyActivity()) {
         activeDevice = INPUT_DEVICE_GAMEPAD;
-    }
-
-    if (activeDevice == INPUT_DEVICE_GAMEPAD && gamepadConnected()) {
-        updateVirtualCursor(dt);
     }
 }
 
@@ -207,8 +259,55 @@ bool Input_UsingGamepad(void) {
     return activeDevice == INPUT_DEVICE_GAMEPAD && gamepadConnected();
 }
 
+void Input_FocusReset(int *focus, int count) {
+    (void)count;
+    *focus = 0;
+    focusNavHeld = 0;
+    focusRepeatTimer = 0.0f;
+}
+
+void Input_FocusUpdateSkip(int *focus, int count, int cols,
+                           InputFocusSkipFn skip, void *user) {
+    if (count <= 0) return;
+    clampFocus(focus, count);
+    if (!Input_UsingGamepad()) return;
+
+    if (cols < 1) cols = 1;
+
+    int dr = 0, dc = 0;
+    if (!readFocusNav(&dr, &dc)) return;
+
+    if (cols == 1) dc = 0;
+    if (cols >= count) dr = 0;
+
+    if (dr == 0 && dc == 0) return;
+
+    *focus = moveFocusIndex(*focus, count, cols, dr, dc, skip, user);
+}
+
+void Input_FocusUpdate(int *focus, int count, int cols) {
+    Input_FocusUpdateSkip(focus, count, cols, NULL, NULL);
+}
+
+bool Input_ItemHot(int index, Rectangle rect, int *focus, int count, int cols) {
+    (void)cols;
+    if (Input_UsingGamepad()) {
+        clampFocus(focus, count);
+        return index == *focus;
+    }
+    return CheckCollisionPointRec(GetMousePosition(), rect);
+}
+
+bool Input_ItemPressed(int index, Rectangle rect, int *focus, int count, int cols) {
+    (void)cols;
+    if (Input_UsingGamepad()) {
+        clampFocus(focus, count);
+        return index == *focus && Input_PressedConfirm();
+    }
+    return CheckCollisionPointRec(GetMousePosition(), rect) && Input_PointerPressed();
+}
+
 Vector2 Input_GetPointer(void) {
-    if (Input_UsingGamepad()) return virtualCursor;
     return GetMousePosition();
 }
 
@@ -292,18 +391,6 @@ bool Input_PressedGateFalse(void) {
 }
 
 void Input_DrawCursor(void) {
-    if (!Input_UsingGamepad()) return;
-
-    Vector2 p = virtualCursor;
-    Color col = COLOR_NEON_CYAN;
-    Color glow = ColorAlpha(col, 0.35f);
-
-    DrawCircleV(p, 14.0f, glow);
-    DrawCircleLinesV(p, 10.0f, col);
-    DrawLineEx((Vector2){ p.x - 16.0f, p.y }, (Vector2){ p.x - 6.0f, p.y }, 2.0f, col);
-    DrawLineEx((Vector2){ p.x + 6.0f, p.y }, (Vector2){ p.x + 16.0f, p.y }, 2.0f, col);
-    DrawLineEx((Vector2){ p.x, p.y - 16.0f }, (Vector2){ p.x, p.y - 6.0f }, 2.0f, col);
-    DrawLineEx((Vector2){ p.x, p.y + 6.0f }, (Vector2){ p.x, p.y + 16.0f }, 2.0f, col);
 }
 
 void Input_DrawDebug(void) {

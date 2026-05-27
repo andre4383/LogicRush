@@ -11,6 +11,7 @@
 #include "raylib.h"
 #include "game.h"
 #include "../core/input.h"
+#include "../core/theme.h"
 #include "memory_game.h"
 #include <stdlib.h>
 #include <math.h>
@@ -19,6 +20,24 @@
 
 // ── Global state ─────────────────────────────────────────────────────────
 MemoryGameState mgState = {0};
+static int cardFocus = 0;
+static int cardFocusCols = 4;
+
+static bool cardFocusSkip(int index, void *user) {
+    (void)user;
+    if (index < 0 || index >= mgState.cardCount) return true;
+    return mgState.cards[index].state != CARD_FACE_DOWN;
+}
+
+static void snapCardFocusToPlayable(void) {
+    Input_FocusReset(&cardFocus, mgState.cardCount);
+    for (int i = 0; i < mgState.cardCount; i++) {
+        if (!cardFocusSkip(i, NULL)) {
+            cardFocus = i;
+            return;
+        }
+    }
+}
 
 // ── Symbol text labels ───────────────────────────────────────────────────
 static const char *SYMBOL_LABELS[SYM_COUNT] = {
@@ -81,6 +100,8 @@ static void LayoutCards(int count)
         mgState.cards[i].width  = cardW;
         mgState.cards[i].height = cardH;
     }
+
+    cardFocusCols = cols;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────
@@ -231,40 +252,38 @@ void MemoryGame_Update(GameCtx *ctx, float dt)
 
         case MG_PHASE_HIDE:
             mgState.phaseTimer -= dt;
-            if (mgState.phaseTimer <= 0.0f)
+            if (mgState.phaseTimer <= 0.0f) {
                 mgState.phase = MG_PHASE_PLAY;
+                snapCardFocusToPlayable();
+            }
             break;
 
         // ── Player input ─────────────────────────────────────────────
         case MG_PHASE_PLAY:
         {
-            if (Input_PointerPressed())
-            {
-                Vector2 mp = Input_GetPointer();
-                for (int i = 0; i < mgState.cardCount; i++)
-                {
-                    Card *c = &mgState.cards[i];
-                    if (c->state != CARD_FACE_DOWN) continue;
+            Input_FocusUpdateSkip(&cardFocus, mgState.cardCount, cardFocusCols,
+                                  cardFocusSkip, NULL);
 
-                    Rectangle r = {c->x - c->width*0.5f,
-                                   c->y - c->height*0.5f,
-                                   c->width, c->height};
-                    if (CheckCollisionPointRec(mp, r))
-                    {
-                        // Flip it up
-                        StartFlipUp(i);
-                        c->selected = true;
-                        if (mgState.selCount < 2)
-                            mgState.sel[mgState.selCount++] = i;
+            for (int i = 0; i < mgState.cardCount; i++) {
+                Card *c = &mgState.cards[i];
+                if (c->state != CARD_FACE_DOWN) continue;
 
-                        if (mgState.selCount == 2)
-                        {
-                            mgState.phase      = MG_PHASE_CHECK;
-                            mgState.phaseTimer = 0.9f;
-                        }
-                        break;
-                    }
+                Rectangle r = { c->x - c->width * 0.5f,
+                                c->y - c->height * 0.5f,
+                                c->width, c->height };
+                if (!Input_ItemPressed(i, r, &cardFocus, mgState.cardCount, cardFocusCols))
+                    continue;
+
+                StartFlipUp(i);
+                c->selected = true;
+                if (mgState.selCount < 2)
+                    mgState.sel[mgState.selCount++] = i;
+
+                if (mgState.selCount == 2) {
+                    mgState.phase      = MG_PHASE_CHECK;
+                    mgState.phaseTimer = 0.9f;
                 }
+                break;
             }
         } break;
 
@@ -624,6 +643,15 @@ void MemoryGame_Draw(GameCtx *ctx)
                   (mgState.cards[i].state == CARD_MATCHED);
         DrawCard(&mgState.cards[i], sf,
                  mgState.correctFlashT, mgState.wrongFlashT);
+
+        if (Input_UsingGamepad() && mgState.phase == MG_PHASE_PLAY && i == cardFocus &&
+            mgState.cards[i].state == CARD_FACE_DOWN) {
+            Card *c = &mgState.cards[i];
+            Rectangle fr = { c->x - c->width * 0.5f - 4.0f,
+                             c->y - c->height * 0.5f - 4.0f,
+                             c->width + 8.0f, c->height + 8.0f };
+            DrawRectangleLinesEx(fr, 3.0f, COLOR_NEON_CYAN);
+        }
     }
 
     // Equal on the right

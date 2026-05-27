@@ -91,12 +91,12 @@ Pareie o controle **antes** de `make run` quando possível. Se conectar depois, 
 
 | Ação | Teclado / mouse | Gamepad |
 |------|-----------------|---------|
-| Mover (labirinto) | WASD / setas | Analógico esquerdo ou D-pad |
-| Cursor (menu, cartas, boss) | Mouse | Analógico direito (ou D-pad se o stick direito estiver parado) |
-| Selecionar / confirmar | Clique / Enter / Espaço | **A** |
+| Mover (labirinto) | WASD / setas | Analógico esquerdo |
+| Menus, cartas, respostas, portões | Mouse (hover + clique) | **D-pad** ou stick esquerdo para foco; **A** confirma |
+| Selecionar / confirmar | Clique / Enter / Espaço | **A** no item em foco |
 | Voltar / pausar | ESC | **B** ou Start |
-| Portão Verdadeiro | V | **Y** |
-| Portão Falso | F | **X** |
+| Portão Verdadeiro | V | **Y** ou foco + **A** |
+| Portão Falso | F | **X** ou foco + **A** |
 
 **Vibração:** feedback ao perder vida e ao concluir uma fase. No **macOS** a vibração pode ser fraca ou ausente.
 
@@ -114,9 +114,9 @@ Ou pressione **F12** no jogo. O overlay mostra se cada slot `pad[0..3]` está at
 
 1. LED do controle fixo após parear no Mac.
 2. Debug mostra `pad[n]: yes` e nome do 8BitDo.
-3. Analógico direito move o cursor ciano no menu.
-4. **A** clica em “Iniciar”.
-5. No labirinto, o stick esquerdo move o personagem.
+3. No menu, **D-pad** move o destaque entre botões; **A** em “Iniciar”.
+4. No quiz, **D-pad** move o foco entre cartas; **A** vira a carta.
+5. No labirinto, stick esquerdo move o personagem; nas portas, **D-pad** + **A** ou **Y**/**X**.
 
 ---
 

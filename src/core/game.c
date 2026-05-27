@@ -21,6 +21,13 @@ bool gameRunning = false;
 bool gamePaused = false;
 int  globalLives = 3;   // shared across phases
 
+#define PAUSE_ITEM_COUNT    2
+#define QUIZ_OVER_ITEM_COUNT 2
+static int pauseFocus = 0;
+static int quizOverFocus = 0;
+static bool wasPaused = false;
+static bool wasQuizGameOver = false;
+
 // Phase Banner Transition Overlay System
 float phaseBannerTimer = 0.0f;
 const char* phaseBannerTitle = "";
@@ -172,32 +179,35 @@ void UpdateQuizScreen(void) {
     }
     
     if (quizCtx.state == STATE_GAME_OVER) {
+        if (!wasQuizGameOver) {
+            Input_FocusReset(&quizOverFocus, QUIZ_OVER_ITEM_COUNT);
+            wasQuizGameOver = true;
+        }
+
         Rectangle card = { SCREEN_WIDTH / 2.0f - 250, SCREEN_HEIGHT / 2.0f - 150, 500, 300 };
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
-        Vector2 ptr = Input_GetPointer();
-        if (Input_PointerPressed()) {
-            if (CheckCollisionPointRec(ptr, btnRestart)) {
-                globalScore = 0;
-                globalTimer = 0.0f;
-                globalLives = 3;
-                InitQuizScreen();
-            }
-            if (CheckCollisionPointRec(ptr, btnMenu)) {
-                currentScreen = SCREEN_TITLE;
-            }
-        }
-        if (Input_PressedConfirm()) {
+
+        Input_FocusUpdate(&quizOverFocus, QUIZ_OVER_ITEM_COUNT, QUIZ_OVER_ITEM_COUNT);
+
+        if (Input_ItemPressed(0, btnRestart, &quizOverFocus, QUIZ_OVER_ITEM_COUNT,
+                              QUIZ_OVER_ITEM_COUNT) ||
+            (!Input_UsingGamepad() && Input_PressedConfirm())) {
             globalScore = 0;
             globalTimer = 0.0f;
             globalLives = 3;
             InitQuizScreen();
+            wasQuizGameOver = false;
         }
-        if (Input_PressedCancel()) {
+        if (Input_ItemPressed(1, btnMenu, &quizOverFocus, QUIZ_OVER_ITEM_COUNT,
+                              QUIZ_OVER_ITEM_COUNT) ||
+            Input_PressedCancel()) {
             currentScreen = SCREEN_TITLE;
+            wasQuizGameOver = false;
         }
         return;
     }
+    wasQuizGameOver = false;
     
     globalTimer += dt;
     MemoryGame_Update(&quizCtx, dt);
@@ -232,9 +242,9 @@ void DrawQuizScreen(void) {
     
     DrawUnifiedHUD("FASE 1: QUIZ", "EQUIVALÊNCIAS", NULL);
 #ifdef __APPLE__
-    DrawBottomHUD("ESC/B: Pausar  |  Mouse ou analógico direito + A nas cartas  |  Ctrl+F: Fullscreen");
+    DrawBottomHUD("ESC/B: Pausar  |  Mouse ou D-pad + A nas cartas  |  Ctrl+F: Fullscreen");
 #else
-    DrawBottomHUD("ESC/B: Pausar  |  Mouse ou analógico direito + A nas cartas  |  F11: Fullscreen");
+    DrawBottomHUD("ESC/B: Pausar  |  Mouse ou D-pad + A nas cartas  |  F11: Fullscreen");
 #endif
     
     // Draw Game Over overlay if needed
@@ -259,16 +269,15 @@ void DrawQuizScreen(void) {
         
         Rectangle btnRestart = { SCREEN_WIDTH / 2.0f - 180, card.y + 180, 160, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f + 20, card.y + 180, 160, 45 };
-        
-        Vector2 ptr = Input_GetPointer();
-        bool hoveredRestart = CheckCollisionPointRec(ptr, btnRestart);
-        bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
-        
+
+        bool hoveredRestart = Input_ItemHot(0, btnRestart, &quizOverFocus,
+                                          QUIZ_OVER_ITEM_COUNT, QUIZ_OVER_ITEM_COUNT);
+        bool hoveredMenu = Input_ItemHot(1, btnMenu, &quizOverFocus,
+                                        QUIZ_OVER_ITEM_COUNT, QUIZ_OVER_ITEM_COUNT);
+
         DrawThemeButton(btnRestart, "REINICIAR (A/ESP)", 12, hoveredRestart, COLOR_NEON_GREEN);
         DrawThemeButton(btnMenu, "MENU (B/ESC)", 12, hoveredMenu, COLOR_TEXT_MUTED);
     }
-
-    Input_DrawCursor();
     
     // Draw Phase Banner overlay on top
     DrawPhaseBanner();
@@ -345,11 +354,10 @@ void DrawPauseOverlay(void) {
     // Botões
     Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
     Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
-    
-    Vector2 ptr = Input_GetPointer();
-    bool hoveredResume = CheckCollisionPointRec(ptr, btnResume);
-    bool hoveredMenu = CheckCollisionPointRec(ptr, btnMenu);
-    
+
+    bool hoveredResume = Input_ItemHot(0, btnResume, &pauseFocus, PAUSE_ITEM_COUNT, 1);
+    bool hoveredMenu = Input_ItemHot(1, btnMenu, &pauseFocus, PAUSE_ITEM_COUNT, 1);
+
     DrawThemeButton(btnResume, "RETOMAR (ESC/B)", 14, hoveredResume, COLOR_NEON_GREEN);
     DrawThemeButton(btnMenu, "SAIR PARA O MENU", 14, hoveredMenu, COLOR_NEON_RED);
 }
@@ -363,27 +371,34 @@ void UpdateGame(void) {
 #endif
 
     if (gamePaused) {
+        if (!wasPaused) {
+            Input_FocusReset(&pauseFocus, PAUSE_ITEM_COUNT);
+            wasPaused = true;
+        }
+
         if (Input_PressedCancel()) {
             gamePaused = false;
+            wasPaused = false;
             return;
         }
-        
+
         Rectangle card = { SCREEN_WIDTH / 2.0f - 200, SCREEN_HEIGHT / 2.0f - 120, 400, 240 };
         Rectangle btnResume = { SCREEN_WIDTH / 2.0f - 150, card.y + 100, 300, 45 };
         Rectangle btnMenu = { SCREEN_WIDTH / 2.0f - 150, card.y + 160, 300, 45 };
-        
-        Vector2 ptr = Input_GetPointer();
-        if (Input_PointerPressed()) {
-            if (CheckCollisionPointRec(ptr, btnResume)) {
-                gamePaused = false;
-            }
-            else if (CheckCollisionPointRec(ptr, btnMenu)) {
-                gamePaused = false;
-                currentScreen = SCREEN_TITLE;
-            }
+
+        Input_FocusUpdate(&pauseFocus, PAUSE_ITEM_COUNT, 1);
+
+        if (Input_ItemPressed(0, btnResume, &pauseFocus, PAUSE_ITEM_COUNT, 1)) {
+            gamePaused = false;
+            wasPaused = false;
+        } else if (Input_ItemPressed(1, btnMenu, &pauseFocus, PAUSE_ITEM_COUNT, 1)) {
+            gamePaused = false;
+            wasPaused = false;
+            currentScreen = SCREEN_TITLE;
         }
-        return; // Congela o jogo
+        return;
     }
+    wasPaused = false;
 
     switch (currentScreen) {
         case SCREEN_TITLE:
@@ -432,7 +447,6 @@ void DrawGame(void) {
 
     if (gamePaused) {
         DrawPauseOverlay();
-        Input_DrawCursor();
     }
 
     Input_DrawDebug();
