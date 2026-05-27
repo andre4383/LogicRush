@@ -413,8 +413,8 @@ static void DrawEqualSprite(float t) {
     }
 
     // ── Geometria do frame ────────────────────────────────────────────────────────
-    float frameW = floorf((float)texEqualSheet.width  / (float)EQUAL_SHEET_COLS);
-    float frameH = floorf((float)texEqualSheet.height / (float)EQUAL_SHEET_ROWS);
+    float frameW = roundf((float)texEqualSheet.width  / (float)EQUAL_SHEET_COLS);
+    float frameH = roundf((float)texEqualSheet.height / (float)EQUAL_SHEET_ROWS);
     int   col    = equalCurrentFrame % EQUAL_SHEET_COLS;
     int   row    = equalCurrentFrame / EQUAL_SHEET_COLS;
 
