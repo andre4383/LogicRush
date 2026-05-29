@@ -134,3 +134,8 @@ set RAYLIB_PATH=D:\libs\raylib && make run
 ### DIRETOR DE ARTE
 
 - Breno Gabriel
+
+### TRILHA SONORA
+
+- André Montenegro -> Sound cloud>: https://on.soundcloud.com/5YUaTmZ4KEe4fumDuo
+- Gabriel Alves -> Sound cloud: https://soundcloud.com/prodcreativowav  Spotify: https://open.spotify.com/intl-pt/artist/4V48gcTOCJZYrWPtnzd77Q?si=WSN_B0UQSCisZaTPpDnicQ
